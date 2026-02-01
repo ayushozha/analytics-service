@@ -33,7 +33,7 @@ COPY crates/ crates/
 COPY migrations/ migrations/
 # Overwrite the static script with the SDK-built version
 COPY --from=sdk-builder /sdk/dist/pulse.min.global.js crates/pulse-server/static/pulse.min.js
-RUN touch crates/pulse-server/src/main.rs && cargo build --release -p pulse-server
+RUN touch crates/pulse-common/src/lib.rs crates/pulse-server/src/main.rs && cargo build --release -p pulse-server
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
