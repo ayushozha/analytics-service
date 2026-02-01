@@ -1,0 +1,13 @@
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    {% for card in cards %}
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">{{ card.label }}</p>
+        <p class="mt-1 text-2xl font-bold text-gray-900">{{ card.display_value }}</p>
+        {% if card.change != "" %}
+        <p class="mt-1 text-xs {% if card.positive %}text-emerald-600{% else %}text-red-500{% endif %}">
+            {{ card.change }} vs prev period
+        </p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>

@@ -1,0 +1,28 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Environment
+.env
+.env.local
+
+# GeoIP database
+data/*.mmdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (SDK)
+sdk/node_modules/
+sdk/dist/
+
+# Docker
+docker-compose.override.yml

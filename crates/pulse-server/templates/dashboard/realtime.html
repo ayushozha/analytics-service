@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Realtime — Pulse Analytics{% endblock %}
+{% block body %}
+<div class="flex h-screen">
+    {% include "partials/nav.html" %}
+    <main class="flex-1 overflow-y-auto">
+        <div class="p-6 max-w-6xl">
+            <h2 class="text-xl font-bold text-gray-900 mb-6">Realtime</h2>
+            <div id="realtime-content"
+                 hx-get="/dashboard/api/realtime"
+                 hx-trigger="load, every 5s">
+                <div class="bg-white rounded-xl border border-gray-200 p-12 text-center animate-pulse">
+                    <div class="h-16 bg-gray-200 rounded w-24 mx-auto mb-4"></div>
+                    <div class="h-4 bg-gray-200 rounded w-32 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

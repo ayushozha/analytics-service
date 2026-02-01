@@ -1,0 +1,39 @@
+<div class="flex items-center gap-2">
+    <select id="date-range" onchange="updateDateRange(this.value)"
+        class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+        <option value="today" {% if range == "today" %}selected{% endif %}>Today</option>
+        <option value="7d" {% if range == "7d" %}selected{% endif %}>Last 7 days</option>
+        <option value="30d" {% if range == "30d" %}selected{% endif %}>Last 30 days</option>
+        <option value="90d" {% if range == "90d" %}selected{% endif %}>Last 90 days</option>
+    </select>
+    <span class="htmx-indicator">
+        <svg class="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    </span>
+</div>
+<script>
+function getDateRange(range) {
+    const now = new Date();
+    let start;
+    switch(range) {
+        case 'today': start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); break;
+        case '7d': start = new Date(now.getTime() - 7*24*60*60*1000); break;
+        case '90d': start = new Date(now.getTime() - 90*24*60*60*1000); break;
+        default: start = new Date(now.getTime() - 30*24*60*60*1000);
+    }
+    return { start_at: start.toISOString(), end_at: now.toISOString() };
+}
+function updateDateRange(range) {
+    const {start_at, end_at} = getDateRange(range);
+    document.querySelectorAll('[data-date-target]').forEach(el => {
+        const url = el.getAttribute('hx-get');
+        if (url) {
+            const base = url.split('?')[0];
+            el.setAttribute('hx-get', `${base}?start_at=${start_at}&end_at=${end_at}`);
+            htmx.trigger(el, 'dateChange');
+        }
+    });
+}
+</script>

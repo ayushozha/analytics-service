@@ -1,0 +1,32 @@
+services:
+  pulse:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pulse-analytics
+    ports:
+      - "8090:8090"
+    environment:
+      - PULSE_PORT=8090
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgres://admin:${POSTGRES_PASSWORD}@projects-postgres:5433/pulse_analytics?sslmode=disable
+      - REDIS_URL=redis://pulse_analytics_user:${PULSE_REDIS_PASSWORD}@projects-redis:6379/0
+      - REDIS_KEY_PREFIX=pulse_analytics:
+      - PULSE_ADMIN_TOKEN=${PULSE_ADMIN_TOKEN}
+      - UMAMI_URL=${UMAMI_URL}
+      - UMAMI_USER=${UMAMI_USER}
+      - UMAMI_PASS=${UMAMI_PASS}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - GEOIP_DB_PATH=/app/data/GeoLite2-City.mmdb
+      - RUST_LOG=info
+      - BUFFER_FLUSH_INTERVAL_SECS=5
+      - BUFFER_BATCH_SIZE=500
+      - RATE_LIMIT_PER_SECOND=100
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pulse.rule=Host(`pulse.ayushojha.com`)"
+      - "traefik.http.routers.pulse.entrypoints=https"
+      - "traefik.http.routers.pulse.tls=true"
+      - "traefik.http.routers.pulse.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pulse.loadbalancer.server.port=8090"

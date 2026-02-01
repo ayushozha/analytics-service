@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Pages — Pulse Analytics{% endblock %}
+{% block body %}
+<div class="flex h-screen">
+    {% include "partials/nav.html" %}
+    <main class="flex-1 overflow-y-auto">
+        <div class="p-6 max-w-6xl">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-bold text-gray-900">Pages</h2>
+                {% include "partials/date_picker.html" %}
+            </div>
+            <div id="table-content"
+                 hx-get="/dashboard/api/pages?start_at={{ start_at }}&end_at={{ end_at }}"
+                 hx-trigger="load, dateChange"
+                 data-date-target="true">
+                <div class="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400 animate-pulse">Loading...</div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
