@@ -4,29 +4,46 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: pulse-analytics
-    ports:
-      - "8090:8090"
+    expose:
+      - "8090"
     environment:
       - PULSE_PORT=8090
       - ENVIRONMENT=production
-      - DATABASE_URL=postgres://admin:${POSTGRES_PASSWORD}@projects-postgres:5433/pulse_analytics?sslmode=disable
-      - REDIS_URL=redis://pulse_analytics_user:${PULSE_REDIS_PASSWORD}@projects-redis:6379/0
+      - RUST_LOG=info
+      - DATABASE_URL=${DATABASE_URL:-postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@projects-db:5432/pulse_analytics?sslmode=disable}
+      - REDIS_URL=${REDIS_URL:-redis://pulse_analytics_user:10e9964b39c0b82e29854205b23c1c337e969b22260daaf22d9ff4b611edfd88@projects-redis:6379/0}
       - REDIS_KEY_PREFIX=pulse_analytics:
       - PULSE_ADMIN_TOKEN=${PULSE_ADMIN_TOKEN}
-      - UMAMI_URL=${UMAMI_URL}
-      - UMAMI_USER=${UMAMI_USER}
-      - UMAMI_PASS=${UMAMI_PASS}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-      - GEOIP_DB_PATH=/app/data/GeoLite2-City.mmdb
-      - RUST_LOG=info
+      - PULSE_COOKIE_SECRET=${PULSE_COOKIE_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://tapdue.com,https://www.tapdue.com,https://ayushojha.com,https://pulse.ayushojha.com}
       - BUFFER_FLUSH_INTERVAL_SECS=5
       - BUFFER_BATCH_SIZE=500
       - RATE_LIMIT_PER_SECOND=100
+      - DATA_RETENTION_DAYS=365
     restart: always
+    networks:
+      - coolify
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.pulse.rule=Host(`pulse.ayushojha.com`)"
-      - "traefik.http.routers.pulse.entrypoints=https"
-      - "traefik.http.routers.pulse.tls=true"
-      - "traefik.http.routers.pulse.tls.certresolver=letsencrypt"
-      - "traefik.http.services.pulse.loadbalancer.server.port=8090"
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.middlewares.gzip-pulse.compress=true
+      - traefik.http.middlewares.redirect-to-https-pulse.redirectscheme.scheme=https
+      - traefik.http.routers.http-pulse.entryPoints=http
+      - traefik.http.routers.http-pulse.middlewares=redirect-to-https-pulse
+      - "traefik.http.routers.http-pulse.rule=Host(`pulse.ayushojha.com`)"
+      - traefik.http.routers.https-pulse.entryPoints=https
+      - traefik.http.routers.https-pulse.middlewares=gzip-pulse
+      - "traefik.http.routers.https-pulse.rule=Host(`pulse.ayushojha.com`)"
+      - traefik.http.routers.https-pulse.tls=true
+      - traefik.http.routers.https-pulse.tls.certresolver=letsencrypt
+      - traefik.http.services.pulse.loadbalancer.server.port=8090
+
+networks:
+  coolify:
+    external: true
