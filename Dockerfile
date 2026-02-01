@@ -7,7 +7,7 @@ COPY sdk/src/ src/
 RUN npm run build
 
 # Stage 2: Build the Rust server
-FROM rust:1.85-slim-bookworm AS builder
+FROM rust:slim-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
