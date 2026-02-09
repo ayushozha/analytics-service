@@ -1,0 +1,100 @@
+name: Auto Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: auto-deploy
+  cancel-in-progress: false
+
+env:
+  COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+  COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+  APP_UUID: "y000k4sgsogg04gc84ccoc80"
+  HEALTH_URL: "https://pulse.ayushojha.com/health"
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Capture current state
+        id: capture
+        run: |
+          old_sha="${{ github.event.before }}"
+          echo "old_sha=$old_sha" >> "$GITHUB_OUTPUT"
+          echo "Rollback commit: $old_sha"
+
+      - name: Trigger deployment
+        id: deploy
+        run: |
+          response=$(curl -sf -X POST \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            "$COOLIFY_BASE_URL/api/v1/applications/$APP_UUID/restart")
+          uuid=$(echo "$response" | jq -r '.deployment_uuid')
+          if [ -z "$uuid" ] || [ "$uuid" = "null" ]; then
+            echo "::error::Failed to trigger deployment"
+            exit 1
+          fi
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo "Deployment: $uuid"
+
+      - name: Wait for deployment
+        run: |
+          for i in $(seq 1 40); do
+            status=$(curl -sf \
+              -H "Authorization: Bearer $COOLIFY_TOKEN" \
+              "$COOLIFY_BASE_URL/api/v1/deployments/${{ steps.deploy.outputs.uuid }}" \
+              | jq -r '.status // "unknown"') || status="error"
+            echo "[$i/40] $status"
+            case "$status" in
+              finished) exit 0 ;;
+              failed|cancelled-by-user) echo "::error::Deployment $status"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Deployment timed out"
+          exit 1
+
+      - name: Verify health
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null) || code="000"
+            echo "[$i/10] HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::Health check failed"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          old_sha="${{ steps.capture.outputs.old_sha }}"
+          echo "::warning::Rolling back to $old_sha"
+          curl -sf -X PATCH \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$COOLIFY_BASE_URL/api/v1/applications/$APP_UUID" \
+            -d "{\"git_commit_sha\": \"$old_sha\"}"
+          response=$(curl -sf -X POST \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            "$COOLIFY_BASE_URL/api/v1/applications/$APP_UUID/restart")
+          rb_uuid=$(echo "$response" | jq -r '.deployment_uuid')
+          for i in $(seq 1 40); do
+            status=$(curl -sf \
+              -H "Authorization: Bearer $COOLIFY_TOKEN" \
+              "$COOLIFY_BASE_URL/api/v1/deployments/$rb_uuid" \
+              | jq -r '.status // "unknown"') || status="error"
+            case "$status" in
+              finished) echo "Rollback succeeded."; break ;;
+              failed|cancelled-by-user) echo "::error::Rollback failed"; break ;;
+            esac
+            sleep 15
+          done
+          curl -sf -X PATCH \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$COOLIFY_BASE_URL/api/v1/applications/$APP_UUID" \
+            -d '{"git_commit_sha": "HEAD"}'
