@@ -175,7 +175,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/dashboard/api/events", get(routes::dashboard::htmx_events_table))
         .route("/dashboard/api/devices", get(routes::dashboard::htmx_devices_table))
         .route("/dashboard/api/geo", get(routes::dashboard::htmx_geo_table))
-        .route("/dashboard/api/realtime", get(routes::dashboard::htmx_realtime));
+        .route("/dashboard/api/realtime", get(routes::dashboard::htmx_realtime))
+        // Visitor pages
+        .route("/dashboard/visitors", get(routes::dashboard::visitors_page))
+        .route("/dashboard/visitors/{visitor_id}", get(routes::dashboard::visitor_detail_page))
+        .route("/dashboard/pricing", get(routes::dashboard::pricing_page))
+        // Visitor HTMX API
+        .route("/dashboard/api/visitors/live-count", get(routes::dashboard::htmx_visitors_live_count))
+        .route("/dashboard/api/visitors/activity-feed", get(routes::dashboard::htmx_visitors_activity_feed))
+        .route("/dashboard/api/visitors/table", get(routes::dashboard::htmx_visitors_table))
+        .route("/dashboard/api/visitor/{visitor_id}/summary", get(routes::dashboard::htmx_visitor_summary))
+        .route("/dashboard/api/visitor/{visitor_id}/sessions", get(routes::dashboard::htmx_visitor_sessions))
+        .route("/dashboard/api/visitor/{visitor_id}/session/{session_id}/detail", get(routes::dashboard::htmx_visitor_session_detail))
+        .route("/dashboard/api/visitor/{visitor_id}/activity-chart", get(routes::dashboard::htmx_visitor_activity_chart))
+        .route("/dashboard/api/visitor/{visitor_id}/events-breakdown", get(routes::dashboard::htmx_visitor_events_breakdown))
+        // Pricing HTMX API
+        .route("/dashboard/api/pricing/stats", get(routes::dashboard::htmx_pricing_stats))
+        .route("/dashboard/api/pricing/timeseries", get(routes::dashboard::htmx_pricing_timeseries))
+        .route("/dashboard/api/pricing/frequency", get(routes::dashboard::htmx_pricing_frequency))
+        .route("/dashboard/api/pricing/referrers", get(routes::dashboard::htmx_pricing_referrers))
+        .route("/dashboard/api/pricing/heatmap", get(routes::dashboard::htmx_pricing_heatmap))
+        .route("/dashboard/api/pricing/funnel", get(routes::dashboard::htmx_pricing_funnel));
 
     // Public routes (no auth)
     let public_routes = Router::new()
