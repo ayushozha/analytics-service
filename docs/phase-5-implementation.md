@@ -199,8 +199,11 @@ curl -X POST https://pulse.ayushojha.com/api/admin/projects/{id}/webhooks/{wid}/
   -H "Authorization: Bearer $PULSE_ADMIN_TOKEN"
 ```
 
-## What's NOT Included
+## What's NOT Included (addressed in Phase 6 or deferred)
 
+- **User-level visitor tracking and drill-down**: Implemented in Phase 6
+- **Pricing page analytics**: Implemented in Phase 6
+- **Rich visualizations (heatmaps, funnels, doughnut charts)**: Implemented in Phase 6
 - **Webhook retry/dead-letter queue**: Failed webhooks are logged but not retried
 - **Dashboard dark mode**: Uses light theme only
 - **Custom date range input**: Dashboard supports preset ranges (Today, 7d, 30d, 90d) but not custom date pickers
