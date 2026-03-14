@@ -200,7 +200,8 @@ async fn main() -> anyhow::Result<()> {
     // Public routes (no auth)
     let public_routes = Router::new()
         .route("/health", get(routes::health::health_check))
-        .route("/api/script.js", get(routes::script::serve_script));
+        .route("/api/script.js", get(routes::script::serve_script))
+        .route("/docs", get(routes::docs::serve_docs));
 
     let app = Router::new()
         .merge(ingest_routes)
