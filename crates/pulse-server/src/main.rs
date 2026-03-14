@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::middleware as axum_mw;
+use axum::response::Redirect;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
 use maxminddb::Reader;
@@ -199,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Public routes (no auth)
     let public_routes = Router::new()
+        .route("/", get(|| async { Redirect::permanent("/dashboard") }))
         .route("/health", get(routes::health::health_check))
         .route("/api/script.js", get(routes::script::serve_script))
         .route("/docs", get(routes::docs::serve_docs));
