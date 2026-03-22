@@ -735,8 +735,9 @@ pub async fn htmx_visitors_activity_feed(
             )
         };
 
+        let tc = "transition-colors";
         html.push_str(&format!(
-            r#"<div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+            r#"<div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 {tc}">
                 <svg class="w-4 h-4 {icon_color} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">{icon}</svg>
                 <a href="/dashboard/visitors/{visitor}" class="text-xs font-mono text-indigo-600 hover:underline shrink-0">{visitor_short}</a>
                 <span class="text-xs text-gray-500 truncate">{label}</span>
@@ -792,8 +793,9 @@ pub async fn htmx_visitors_table(
         let last_seen = item["last_seen"].as_str().unwrap_or("-");
         let last_short = &last_seen[..last_seen.len().min(10)];
 
+        let tc2 = "transition-colors";
         html.push_str(&format!(
-            r#"<tr class="border-b border-gray-50 hover:bg-indigo-50/50 cursor-pointer transition-colors" onclick="window.location='/dashboard/visitors/{vid}'">
+            r#"<tr class="border-b border-gray-50 hover:bg-indigo-50/50 cursor-pointer {tc2}" onclick="window.location='/dashboard/visitors/{vid}'">
                 <td class="px-4 py-2.5">
                     <span class="font-mono text-xs text-indigo-600">{vid_short}...</span>
                 </td>
