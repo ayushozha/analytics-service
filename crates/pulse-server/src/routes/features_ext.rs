@@ -325,7 +325,7 @@ pub async fn assign_experiment_visitor(
     auth: AuthenticatedProject,
     Path(experiment_id): Path<Uuid>,
     axum::Json(input): axum::Json<AssignVisitor>,
-) -> AppResult<impl IntoResponse> {
+) -> AppResult<axum::Json<serde_json::Value>> {
     auth.require_scope("ingest")?;
     services::modules::require_module_write(&state, auth.project_id, "ab_testing", &auth.allowed_modules).await?;
 
