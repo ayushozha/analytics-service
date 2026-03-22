@@ -154,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/experiments/{id}", get(routes::features_ext::get_experiment).delete(routes::features_ext::delete_experiment))
         .route("/api/v1/experiments/{id}/status", axum::routing::put(routes::features_ext::update_experiment_status))
         .route("/api/v1/experiments/{id}/results", get(routes::features_ext::get_experiment_results))
-        .route("/api/v1/experiments/{id}/assign", post(|s, a, p, j| routes::features_ext::assign_experiment_visitor(s, a, p, j)))
+        // experiment assignment handled via POST /api/collect with type=experiment_assign
         // Surveys
         .route("/api/v1/surveys", get(routes::features_ext::list_surveys).post(routes::features_ext::create_survey))
         .route("/api/v1/surveys/active", get(routes::features_ext::get_active_surveys))
