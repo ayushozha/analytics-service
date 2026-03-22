@@ -925,10 +925,11 @@ pub async fn htmx_visitor_sessions(
         };
         let once_attr = "once";
         let transition_cls = "transition-transform";
+        let transition_colors_cls = "transition-colors";
 
         html.push_str(&format!(
             r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 {transition_colors_cls}"
                      hx-get="/dashboard/api/visitor/{visitor_id}/session/{sid}/detail"
                      hx-target="#session-detail-{sid}"
                      hx-swap="innerHTML"
