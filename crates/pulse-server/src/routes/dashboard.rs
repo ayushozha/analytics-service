@@ -928,13 +928,13 @@ pub async fn htmx_visitor_sessions(
         let once_attr = "once";
         let transition_cls = "transition-transform";
         let transition_colors_cls = "transition-colors";
-        let sid_val = sid;
+        let detail_id = format!("session-detail-{sid}");
 
         html.push_str(&format!(
             r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 {transition_colors_cls}"
                      hx-get="/dashboard/api/visitor/{visitor_id}/session/{sid}/detail"
-                     hx-target="#session-detail-{sid_val}"
+                     hx-target="#{detail_id}"
                      hx-swap="innerHTML"
                      hx-trigger="click {once_attr}">
                     <div class="flex items-center gap-4">
@@ -958,7 +958,7 @@ pub async fn htmx_visitor_sessions(
                     <span>→</span>
                     <span>{exit}</span>
                 </div>
-                <div id="session-detail-{sid_val}"></div>
+                <div id="{detail_id}"></div>
             </div>"#
         ));
     }
