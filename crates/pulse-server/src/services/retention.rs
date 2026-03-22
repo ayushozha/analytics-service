@@ -49,7 +49,19 @@ pub fn start_retention_task(state: Arc<AppState>) {
 async fn run_retention(db: &PgPool, cutoff: NaiveDate) -> Result<(), anyhow::Error> {
     info!("Running retention cleanup, cutoff date: {cutoff}");
 
-    for parent_table in ["pageviews", "events"] {
+    let partitioned_tables = [
+        "pageviews",
+        "events",
+        "goal_conversions",
+        "web_vitals",
+        "scroll_depths",
+        "search_queries",
+        "outlinks",
+        "js_errors",
+        "click_events",
+        "experiment_assignments",
+    ];
+    for parent_table in partitioned_tables {
         let partitions = get_partition_names(db, parent_table).await?;
 
         for (name, _start, end) in &partitions {

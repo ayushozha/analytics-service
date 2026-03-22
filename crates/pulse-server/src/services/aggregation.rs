@@ -49,6 +49,7 @@ async fn compute_all_rollups(db: &PgPool, date: NaiveDate) -> Result<(), anyhow:
     compute_daily_events(db, date).await?;
     compute_daily_geo(db, date).await?;
     compute_daily_devices(db, date).await?;
+    compute_daily_campaigns(db, date).await?;
     info!("Rollup complete for {date}");
     Ok(())
 }
@@ -198,6 +199,44 @@ async fn compute_daily_devices(db: &PgPool, date: NaiveDate) -> Result<(), anyho
         FROM sessions
         WHERE first_at >= $1::date AND first_at < ($1::date + interval '1 day')
         GROUP BY project_id, browser, os, device"#,
+    )
+    .bind(date)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+async fn compute_daily_campaigns(db: &PgPool, date: NaiveDate) -> Result<(), anyhow::Error> {
+    sqlx::query("DELETE FROM daily_campaigns WHERE date = $1")
+        .bind(date)
+        .execute(db)
+        .await?;
+
+    sqlx::query(
+        r#"INSERT INTO daily_campaigns (project_id, date, utm_source, utm_medium, utm_campaign, visitors, sessions, pageviews, bounces)
+        SELECT
+            p.project_id,
+            $1::date,
+            COALESCE(p.utm_source, ''),
+            COALESCE(p.utm_medium, ''),
+            COALESCE(p.utm_campaign, ''),
+            COUNT(DISTINCT p.visitor_id),
+            COUNT(DISTINCT p.session_id),
+            COUNT(p.id),
+            (SELECT COUNT(*) FROM sessions s
+             WHERE s.project_id = p.project_id
+             AND s.first_at::date = $1::date
+             AND s.is_bounce = true
+             AND s.id IN (
+                SELECT DISTINCT pv.session_id FROM pageviews pv
+                WHERE pv.project_id = p.project_id
+                AND pv.created_at >= $1::date AND pv.created_at < ($1::date + interval '1 day')
+                AND pv.utm_source = p.utm_source
+             ))
+        FROM pageviews p
+        WHERE p.created_at >= $1::date AND p.created_at < ($1::date + interval '1 day')
+          AND p.utm_source IS NOT NULL
+        GROUP BY p.project_id, p.utm_source, p.utm_medium, p.utm_campaign"#,
     )
     .bind(date)
     .execute(db)

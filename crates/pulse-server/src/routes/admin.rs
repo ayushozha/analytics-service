@@ -6,8 +6,13 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::models::module::{
+    default_project_settings, module_metadata, parse_project_settings, ModuleConfig, ModuleInfo,
+    UpdateModulesRequest, ALL_MODULES,
+};
 use crate::models::project::{ApiKeyResponse, ApiKeyRow, CreateApiKey, CreateProject, Project};
 use crate::models::webhook::{CreateWebhook, UpdateWebhook, Webhook};
+use crate::services;
 use crate::state::SharedState;
 
 fn generate_api_key(prefix: &str) -> String {
@@ -91,7 +96,7 @@ pub async fn create_api_key(
     let key_prefix = full_key[..8].to_string();
 
     let row: ApiKeyRow = sqlx::query_as(
-        "INSERT INTO api_keys (project_id, key_hash, key_prefix, name, scopes, expires_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, project_id, key_hash, key_prefix, name, scopes, last_used_at, expires_at, created_at, is_active"
+        "INSERT INTO api_keys (project_id, key_hash, key_prefix, name, scopes, expires_at, allowed_modules) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, project_id, key_hash, key_prefix, name, scopes, last_used_at, expires_at, created_at, is_active, allowed_modules"
     )
     .bind(project_id)
     .bind(&key_hash)
@@ -99,6 +104,7 @@ pub async fn create_api_key(
     .bind(&input.name)
     .bind(&input.scopes)
     .bind(input.expires_at)
+    .bind(&input.allowed_modules)
     .fetch_one(&state.db)
     .await?;
 
@@ -119,7 +125,7 @@ pub async fn list_api_keys(
     Path(project_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     let keys: Vec<ApiKeyRow> = sqlx::query_as(
-        "SELECT id, project_id, key_hash, key_prefix, name, scopes, last_used_at, expires_at, created_at, is_active FROM api_keys WHERE project_id = $1 ORDER BY created_at DESC"
+        "SELECT id, project_id, key_hash, key_prefix, name, scopes, last_used_at, expires_at, created_at, is_active, allowed_modules FROM api_keys WHERE project_id = $1 ORDER BY created_at DESC"
     )
     .bind(project_id)
     .fetch_all(&state.db)
@@ -296,4 +302,203 @@ pub async fn test_webhook(
             "error": e.to_string(),
         }))),
     }
+}
+
+// --- Module Management ---
+
+/// List all available modules with their current config for a project.
+pub async fn list_modules(
+    Extension(state): Extension<SharedState>,
+    Path(project_id): Path<Uuid>,
+) -> AppResult<impl IntoResponse> {
+    let settings = services::modules::get_project_settings(&state, project_id).await?;
+
+    let modules: Vec<ModuleInfo> = ALL_MODULES
+        .iter()
+        .map(|&name| {
+            let config = settings
+                .modules
+                .get(name)
+                .cloned()
+                .unwrap_or_default();
+            let (description, category) = module_metadata(name);
+            ModuleInfo {
+                name: name.to_string(),
+                enabled: config.enabled,
+                access: config.access,
+                description: description.to_string(),
+                category: category.to_string(),
+            }
+        })
+        .collect();
+
+    Ok(axum::Json(modules))
+}
+
+/// Update module configuration for a project.
+/// Only updates the modules specified in the request; others remain unchanged.
+pub async fn update_modules(
+    Extension(state): Extension<SharedState>,
+    Path(project_id): Path<Uuid>,
+    axum::Json(input): axum::Json<UpdateModulesRequest>,
+) -> AppResult<impl IntoResponse> {
+    // Load current settings
+    let mut settings = services::modules::get_project_settings(&state, project_id).await?;
+
+    // Validate module names
+    for name in input.modules.keys() {
+        if name == "core" {
+            return Err(AppError::BadRequest(
+                "Cannot modify 'core' module — it is always enabled".to_string(),
+            ));
+        }
+        if !ALL_MODULES.contains(&name.as_str()) {
+            return Err(AppError::BadRequest(format!("Unknown module: {name}")));
+        }
+    }
+
+    // Merge updates
+    for (name, config) in input.modules {
+        settings.modules.insert(name, config);
+    }
+
+    // Ensure core stays enabled
+    settings.modules.entry("core".to_string()).and_modify(|c| {
+        c.enabled = true;
+    });
+
+    let settings_json = serde_json::to_value(&settings)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    // Persist
+    sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
+        .bind(&settings_json)
+        .bind(project_id)
+        .execute(&state.db)
+        .await?;
+
+    // Invalidate cache
+    services::modules::invalidate_settings_cache(&state, project_id).await;
+
+    Ok(axum::Json(serde_json::json!({
+        "ok": true,
+        "modules": settings.modules,
+    })))
+}
+
+/// Enable a single module.
+pub async fn enable_module(
+    Extension(state): Extension<SharedState>,
+    Path((project_id, module_name)): Path<(Uuid, String)>,
+) -> AppResult<impl IntoResponse> {
+    if !ALL_MODULES.contains(&module_name.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Unknown module: {module_name}"
+        )));
+    }
+
+    let mut settings = services::modules::get_project_settings(&state, project_id).await?;
+    settings.modules.entry(module_name.clone()).and_modify(|c| {
+        c.enabled = true;
+    }).or_insert(ModuleConfig {
+        enabled: true,
+        access: crate::models::module::ModuleAccess::All,
+    });
+
+    let settings_json = serde_json::to_value(&settings)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
+        .bind(&settings_json)
+        .bind(project_id)
+        .execute(&state.db)
+        .await?;
+
+    services::modules::invalidate_settings_cache(&state, project_id).await;
+
+    Ok(axum::Json(serde_json::json!({
+        "ok": true,
+        "module": module_name,
+        "enabled": true,
+    })))
+}
+
+/// Disable a single module.
+pub async fn disable_module(
+    Extension(state): Extension<SharedState>,
+    Path((project_id, module_name)): Path<(Uuid, String)>,
+) -> AppResult<impl IntoResponse> {
+    if module_name == "core" {
+        return Err(AppError::BadRequest(
+            "Cannot disable 'core' module".to_string(),
+        ));
+    }
+
+    if !ALL_MODULES.contains(&module_name.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Unknown module: {module_name}"
+        )));
+    }
+
+    let mut settings = services::modules::get_project_settings(&state, project_id).await?;
+    settings.modules.entry(module_name.clone()).and_modify(|c| {
+        c.enabled = false;
+    });
+
+    let settings_json = serde_json::to_value(&settings)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
+        .bind(&settings_json)
+        .bind(project_id)
+        .execute(&state.db)
+        .await?;
+
+    services::modules::invalidate_settings_cache(&state, project_id).await;
+
+    Ok(axum::Json(serde_json::json!({
+        "ok": true,
+        "module": module_name,
+        "enabled": false,
+    })))
+}
+
+/// Update access level for a module.
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateModuleAccess {
+    pub access: crate::models::module::ModuleAccess,
+}
+
+pub async fn update_module_access(
+    Extension(state): Extension<SharedState>,
+    Path((project_id, module_name)): Path<(Uuid, String)>,
+    axum::Json(input): axum::Json<UpdateModuleAccess>,
+) -> AppResult<impl IntoResponse> {
+    if !ALL_MODULES.contains(&module_name.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Unknown module: {module_name}"
+        )));
+    }
+
+    let mut settings = services::modules::get_project_settings(&state, project_id).await?;
+    settings.modules.entry(module_name.clone()).and_modify(|c| {
+        c.access = input.access.clone();
+    });
+
+    let settings_json = serde_json::to_value(&settings)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
+        .bind(&settings_json)
+        .bind(project_id)
+        .execute(&state.db)
+        .await?;
+
+    services::modules::invalidate_settings_cache(&state, project_id).await;
+
+    Ok(axum::Json(serde_json::json!({
+        "ok": true,
+        "module": module_name,
+        "access": input.access,
+    })))
 }

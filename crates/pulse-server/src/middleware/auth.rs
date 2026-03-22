@@ -16,6 +16,9 @@ const API_KEY_CACHE_TTL: u64 = 300; // 5 minutes
 pub struct AuthenticatedProject {
     pub project_id: uuid::Uuid,
     pub scopes: Vec<String>,
+    /// If set, restricts which modules this API key can access.
+    /// None or empty means all enabled modules are accessible.
+    pub allowed_modules: Option<Vec<String>>,
 }
 
 impl AuthenticatedProject {
@@ -73,15 +76,15 @@ pub async fn auth_middleware(
             .map_err(|_| AppError::Internal("corrupt key cache".to_string()))?
     } else {
         // Query database
-        let row: Option<(uuid::Uuid, Vec<String>)> = sqlx::query_as(
-            "SELECT project_id, scopes FROM api_keys WHERE key_hash = $1 AND is_active = true AND (expires_at IS NULL OR expires_at > NOW())"
+        let row: Option<(uuid::Uuid, Vec<String>, Option<Vec<String>>)> = sqlx::query_as(
+            "SELECT project_id, scopes, allowed_modules FROM api_keys WHERE key_hash = $1 AND is_active = true AND (expires_at IS NULL OR expires_at > NOW())"
         )
         .bind(&key_hash)
         .fetch_optional(&state.db)
         .await?;
 
-        let (project_id, scopes) = row.ok_or(AppError::Unauthorized)?;
-        let resolved = ResolvedKey { project_id, scopes };
+        let (project_id, scopes, allowed_modules) = row.ok_or(AppError::Unauthorized)?;
+        let resolved = ResolvedKey { project_id, scopes, allowed_modules };
 
         // Cache the result
         if let Ok(serialized) = serde_json::to_string(&resolved) {
@@ -107,6 +110,7 @@ pub async fn auth_middleware(
     request.extensions_mut().insert(AuthenticatedProject {
         project_id: resolved.project_id,
         scopes: resolved.scopes,
+        allowed_modules: resolved.allowed_modules,
     });
 
     Ok(next.run(request).await)

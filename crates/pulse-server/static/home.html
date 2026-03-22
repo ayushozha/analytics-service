@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pulse Analytics — Privacy-First, Modular Web Analytics</title>
+  <meta name="description" content="Self-hosted, cookie-free web analytics with 23 configurable modules. From pageviews to A/B testing, funnels, and session replay. Built with Rust." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            pulse: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+              950: '#1e1b4b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-40px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(40px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.15); }
+      50% { box-shadow: 0 0 40px rgba(99, 102, 241, 0.3); }
+    }
+    @keyframes bar-grow {
+      from { transform: scaleY(0); }
+      to { transform: scaleY(1); }
+    }
+    @keyframes count-line {
+      from { stroke-dashoffset: 200; }
+      to { stroke-dashoffset: 0; }
+    }
+    .animate-on-scroll {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+    }
+    .animate-on-scroll.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .animate-on-scroll.delay-100 { transition-delay: 0.1s; }
+    .animate-on-scroll.delay-200 { transition-delay: 0.2s; }
+    .animate-on-scroll.delay-300 { transition-delay: 0.3s; }
+    .animate-on-scroll.delay-400 { transition-delay: 0.4s; }
+    .animate-on-scroll.delay-500 { transition-delay: 0.5s; }
+    .hero-animate { animation: fadeInUp 0.8s ease-out forwards; }
+    .hero-animate-delay { animation: fadeInUp 0.8s ease-out 0.2s forwards; opacity: 0; }
+    .hero-animate-delay-2 { animation: fadeInUp 0.8s ease-out 0.4s forwards; opacity: 0; }
+    .hero-animate-delay-3 { animation: fadeInUp 0.8s ease-out 0.6s forwards; opacity: 0; }
+    .nav-scrolled {
+      background: rgba(255, 255, 255, 0.95) !important;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .nav-scrolled a, .nav-scrolled span { color: #1e293b !important; }
+    .nav-scrolled .nav-cta-ghost {
+      color: #6366f1 !important;
+      border-color: #6366f1 !important;
+    }
+    .nav-scrolled .nav-cta-ghost:hover { background: #eef2ff !important; }
+    .glow-card { animation: pulse-glow 3s ease-in-out infinite; }
+    .chart-bar { transform-origin: bottom; animation: bar-grow 1s ease-out forwards; }
+    .chart-bar:nth-child(2) { animation-delay: 0.1s; }
+    .chart-bar:nth-child(3) { animation-delay: 0.2s; }
+    .chart-bar:nth-child(4) { animation-delay: 0.3s; }
+    .chart-bar:nth-child(5) { animation-delay: 0.4s; }
+    .chart-bar:nth-child(6) { animation-delay: 0.5s; }
+    .chart-bar:nth-child(7) { animation-delay: 0.6s; }
+    .chart-line { stroke-dasharray: 200; animation: count-line 2s ease-out forwards; }
+    code { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; }
+    .module-tab.active {
+      color: #6366f1;
+      border-bottom-color: #6366f1;
+    }
+    .module-panel { display: none; }
+    .module-panel.active { display: grid; }
+    html { scroll-padding-top: 80px; }
+  </style>
+</head>
+<body class="bg-white text-slate-800 antialiased">
+
+  <!-- Navigation -->
+  <nav id="navbar" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 sm:h-20">
+        <!-- Logo -->
+        <a href="/" class="flex items-center gap-2">
+          <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="#6366f1"/>
+            <path d="M8 20L12 14L16 17L20 10L24 13" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="13" r="2" fill="white"/>
+          </svg>
+          <span class="text-xl font-bold text-white">Pulse</span>
+        </a>
+
+        <!-- Desktop Links -->
+        <div class="hidden md:flex items-center gap-8">
+          <a href="#features" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Features</a>
+          <a href="#modules" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Modules</a>
+          <a href="/api/docs" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Docs</a>
+          <a href="#pricing" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Pricing</a>
+        </div>
+
+        <!-- CTA Buttons -->
+        <div class="hidden md:flex items-center gap-3">
+          <a href="/dashboard" class="nav-cta-ghost px-4 py-2 text-sm font-medium text-slate-300 border border-slate-600 rounded-lg hover:bg-white/10 transition-all">Dashboard</a>
+          <a href="#quickstart" class="px-4 py-2 text-sm font-medium text-white bg-pulse-500 rounded-lg hover:bg-pulse-600 transition-all shadow-lg shadow-pulse-500/25">Get Started</a>
+        </div>
+
+        <!-- Mobile Menu Button -->
+        <button id="mobile-menu-btn" class="md:hidden text-white p-2" aria-label="Toggle menu">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Mobile Menu -->
+      <div id="mobile-menu" class="md:hidden hidden pb-4">
+        <div class="flex flex-col gap-3 pt-2">
+          <a href="#features" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Features</a>
+          <a href="#modules" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Modules</a>
+          <a href="/api/docs" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Docs</a>
+          <a href="#pricing" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Pricing</a>
+          <div class="flex gap-3 pt-2">
+            <a href="/dashboard" class="px-4 py-2 text-sm font-medium text-slate-300 border border-slate-600 rounded-lg hover:bg-white/10 transition-all">Dashboard</a>
+            <a href="#quickstart" class="px-4 py-2 text-sm font-medium text-white bg-pulse-500 rounded-lg hover:bg-pulse-600 transition-all">Get Started</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="relative min-h-screen flex items-center bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 overflow-hidden">
+    <!-- Background decoration -->
+    <div class="absolute inset-0 overflow-hidden">
+      <div class="absolute -top-1/2 -right-1/4 w-[800px] h-[800px] rounded-full bg-gradient-to-br from-pulse-500/10 to-transparent blur-3xl"></div>
+      <div class="absolute -bottom-1/4 -left-1/4 w-[600px] h-[600px] rounded-full bg-gradient-to-tr from-pulse-600/8 to-transparent blur-3xl"></div>
+      <!-- Grid pattern -->
+      <div class="absolute inset-0" style="background-image: radial-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px); background-size: 40px 40px;"></div>
+    </div>
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20">
+      <div class="text-center max-w-4xl mx-auto">
+        <!-- Badge -->
+        <div class="hero-animate inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-pulse-500/10 border border-pulse-500/20 mb-8">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-sm text-pulse-300 font-medium">Open Source &middot; Built with Rust</span>
+        </div>
+
+        <h1 class="hero-animate text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight tracking-tight">
+          Privacy-First Analytics That
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-pulse-400 to-purple-400"> Don't Compromise</span>
+          on Power
+        </h1>
+
+        <p class="hero-animate-delay mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
+          23 configurable modules. Self-hosted. Cookie-free. From simple pageviews to A/B testing, funnels, and session replay &mdash; enable only what you need.
+        </p>
+
+        <!-- CTA Buttons -->
+        <div class="hero-animate-delay-2 mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a href="/api/docs" class="w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-white bg-pulse-500 rounded-xl hover:bg-pulse-600 transition-all shadow-xl shadow-pulse-500/25 hover:shadow-pulse-500/40 hover:-translate-y-0.5">
+            View Documentation
+          </a>
+          <a href="/dashboard" class="w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-slate-300 border border-slate-600 rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all hover:-translate-y-0.5">
+            Open Dashboard
+          </a>
+        </div>
+      </div>
+
+      <!-- Dashboard Mockup -->
+      <div class="hero-animate-delay-3 mt-16 max-w-4xl mx-auto">
+        <div class="glow-card rounded-2xl bg-slate-800/60 border border-slate-700/50 backdrop-blur-sm p-6 shadow-2xl">
+          <!-- Mockup Header -->
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center gap-3">
+              <div class="flex gap-1.5">
+                <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+              </div>
+              <span class="text-xs text-slate-500 font-mono">pulse.ayushojha.com/dashboard</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-emerald-400 font-medium flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                12 online
+              </span>
+            </div>
+          </div>
+
+          <!-- Mockup Stats -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-slate-900/50 rounded-lg p-3">
+              <p class="text-xs text-slate-500 uppercase tracking-wider">Visitors</p>
+              <p class="text-2xl font-bold text-white mt-1">4,821</p>
+              <p class="text-xs text-emerald-400 mt-1">+12.3%</p>
+            </div>
+            <div class="bg-slate-900/50 rounded-lg p-3">
+              <p class="text-xs text-slate-500 uppercase tracking-wider">Pageviews</p>
+              <p class="text-2xl font-bold text-white mt-1">18,493</p>
+              <p class="text-xs text-emerald-400 mt-1">+8.7%</p>
+            </div>
+            <div class="bg-slate-900/50 rounded-lg p-3">
+              <p class="text-xs text-slate-500 uppercase tracking-wider">Bounce Rate</p>
+              <p class="text-2xl font-bold text-white mt-1">32.1%</p>
+              <p class="text-xs text-emerald-400 mt-1">-2.4%</p>
+            </div>
+            <div class="bg-slate-900/50 rounded-lg p-3">
+              <p class="text-xs text-slate-500 uppercase tracking-wider">Avg. Duration</p>
+              <p class="text-2xl font-bold text-white mt-1">3m 42s</p>
+              <p class="text-xs text-emerald-400 mt-1">+18s</p>
+            </div>
+          </div>
+
+          <!-- Mockup Chart -->
+          <div class="bg-slate-900/50 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-sm text-slate-400 font-medium">Visitors &mdash; Last 7 Days</span>
+              <div class="flex gap-4">
+                <span class="flex items-center gap-1.5 text-xs text-pulse-400">
+                  <span class="w-2.5 h-0.5 bg-pulse-400 rounded"></span> Visitors
+                </span>
+                <span class="flex items-center gap-1.5 text-xs text-emerald-400">
+                  <span class="w-2.5 h-0.5 bg-emerald-400 rounded"></span> Pageviews
+                </span>
+              </div>
+            </div>
+            <svg viewBox="0 0 700 120" class="w-full" preserveAspectRatio="none">
+              <!-- Grid lines -->
+              <line x1="0" y1="30" x2="700" y2="30" stroke="rgba(148,163,184,0.1)" stroke-width="1"/>
+              <line x1="0" y1="60" x2="700" y2="60" stroke="rgba(148,163,184,0.1)" stroke-width="1"/>
+              <line x1="0" y1="90" x2="700" y2="90" stroke="rgba(148,163,184,0.1)" stroke-width="1"/>
+              <!-- Area fill -->
+              <path d="M0,90 L100,70 L200,80 L300,50 L400,40 L500,55 L600,30 L700,20 L700,120 L0,120 Z" fill="url(#areaGrad)" opacity="0.3"/>
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#6366f1"/>
+                  <stop offset="100%" stop-color="transparent"/>
+                </linearGradient>
+              </defs>
+              <!-- Line -->
+              <polyline points="0,90 100,70 200,80 300,50 400,40 500,55 600,30 700,20" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="chart-line"/>
+              <!-- Pageviews line -->
+              <polyline points="0,75 100,55 200,65 300,35 400,25 500,40 600,15 700,10" fill="none" stroke="#34d399" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+              <!-- Dots -->
+              <circle cx="0" cy="90" r="3" fill="#6366f1"/>
+              <circle cx="100" cy="70" r="3" fill="#6366f1"/>
+              <circle cx="200" cy="80" r="3" fill="#6366f1"/>
+              <circle cx="300" cy="50" r="3" fill="#6366f1"/>
+              <circle cx="400" cy="40" r="3" fill="#6366f1"/>
+              <circle cx="500" cy="55" r="3" fill="#6366f1"/>
+              <circle cx="600" cy="30" r="4" fill="#6366f1" stroke="white" stroke-width="1.5"/>
+              <circle cx="700" cy="20" r="3" fill="#6366f1"/>
+            </svg>
+            <div class="flex justify-between mt-2 text-xs text-slate-600">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Bar -->
+      <div class="hero-animate-delay-3 mt-16 max-w-3xl mx-auto">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
+          <div class="text-center">
+            <p class="text-3xl font-bold text-white">100+</p>
+            <p class="text-sm text-slate-500 mt-1">API Endpoints</p>
+          </div>
+          <div class="text-center">
+            <p class="text-3xl font-bold text-white">23</p>
+            <p class="text-sm text-slate-500 mt-1">Modules</p>
+          </div>
+          <div class="text-center">
+            <p class="text-3xl font-bold text-white">&lt;4KB</p>
+            <p class="text-sm text-slate-500 mt-1">Script Size</p>
+          </div>
+          <div class="text-center">
+            <p class="text-3xl font-bold text-white">100%</p>
+            <p class="text-sm text-slate-500 mt-1">Self-Hosted</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom gradient transition -->
+    <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-white to-transparent"></div>
+  </section>
+
+  <!-- Quick Start Section -->
+  <section id="quickstart" class="py-20 sm:py-28 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-slate-900">Get Started in 3 Steps</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-500 max-w-2xl mx-auto">From zero to analytics in under five minutes. No complex setup required.</p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <!-- Step 1 -->
+        <div class="animate-on-scroll relative">
+          <div class="absolute -top-4 -left-2 w-10 h-10 rounded-full bg-pulse-500 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-pulse-500/30">1</div>
+          <div class="bg-slate-50 rounded-2xl p-6 pt-10 border border-slate-200 h-full">
+            <h3 class="text-lg font-semibold text-slate-900 mb-2">Create a Project</h3>
+            <p class="text-sm text-slate-500 mb-4">Register your site via the Admin API and get your API keys.</p>
+            <div class="bg-slate-900 rounded-lg p-4 overflow-x-auto">
+              <pre class="text-xs text-slate-300 whitespace-pre"><code><span class="text-emerald-400">curl</span> -X POST \
+  https://pulse.ayushojha.com/api/admin/projects \
+  -H <span class="text-yellow-300">"Authorization: Bearer &lt;token&gt;"</span> \
+  -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
+  -d <span class="text-yellow-300">'{"name":"My Site","domain":"example.com"}'</span></code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="animate-on-scroll delay-200 relative">
+          <div class="absolute -top-4 -left-2 w-10 h-10 rounded-full bg-pulse-500 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-pulse-500/30">2</div>
+          <div class="bg-slate-50 rounded-2xl p-6 pt-10 border border-slate-200 h-full">
+            <h3 class="text-lg font-semibold text-slate-900 mb-2">Add Tracking Script</h3>
+            <p class="text-sm text-slate-500 mb-4">Drop a single script tag into your HTML. Under 4KB, no cookies.</p>
+            <div class="bg-slate-900 rounded-lg p-4 overflow-x-auto">
+              <pre class="text-xs text-slate-300 whitespace-pre"><code><span class="text-blue-400">&lt;script</span> <span class="text-purple-400">defer</span>
+  <span class="text-purple-400">src</span>=<span class="text-yellow-300">"https://pulse.ayushojha.com
+    /api/script.js"</span>
+  <span class="text-purple-400">data-api</span>=<span class="text-yellow-300">"https://pulse.ayushojha.com"</span>
+  <span class="text-purple-400">data-key</span>=<span class="text-yellow-300">"pa_live_..."</span><span class="text-blue-400">&gt;</span>
+<span class="text-blue-400">&lt;/script&gt;</span></code></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="animate-on-scroll delay-400 relative">
+          <div class="absolute -top-4 -left-2 w-10 h-10 rounded-full bg-pulse-500 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-pulse-500/30">3</div>
+          <div class="bg-slate-50 rounded-2xl p-6 pt-10 border border-slate-200 h-full">
+            <h3 class="text-lg font-semibold text-slate-900 mb-2">View Your Dashboard</h3>
+            <p class="text-sm text-slate-500 mb-4">Data flows in real-time. Log in with your query API key.</p>
+            <div class="bg-slate-900 rounded-lg p-4 flex flex-col items-center justify-center min-h-[120px]">
+              <svg class="w-12 h-12 text-pulse-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+              <a href="/dashboard" class="text-sm text-pulse-400 hover:text-pulse-300 font-medium transition-colors">Open Dashboard &rarr;</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section id="features" class="py-20 sm:py-28 bg-slate-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-slate-900">Everything You Need, Nothing You Don't</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-500 max-w-2xl mx-auto">Built for developers who care about privacy, performance, and control.</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+        <!-- Privacy First -->
+        <div class="animate-on-scroll bg-white rounded-2xl p-8 border border-slate-200 hover:border-pulse-300 hover:shadow-lg hover:shadow-pulse-500/5 transition-all duration-300 group">
+          <div class="w-12 h-12 rounded-xl bg-pulse-50 flex items-center justify-center mb-5 group-hover:bg-pulse-100 transition-colors">
+            <svg class="w-6 h-6 text-pulse-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mb-2">Privacy First</h3>
+          <p class="text-slate-500 leading-relaxed">No cookies, no personal data, GDPR compliant out of the box. Respects Do Not Track. Your visitors' data stays yours.</p>
+        </div>
+
+        <!-- Modular Architecture -->
+        <div class="animate-on-scroll delay-100 bg-white rounded-2xl p-8 border border-slate-200 hover:border-pulse-300 hover:shadow-lg hover:shadow-pulse-500/5 transition-all duration-300 group">
+          <div class="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center mb-5 group-hover:bg-purple-100 transition-colors">
+            <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mb-2">Modular Architecture</h3>
+          <p class="text-slate-500 leading-relaxed">23 configurable modules &mdash; enable funnels, A/B testing, heatmaps, or just basic pageviews. Each module is read/write/all configurable.</p>
+        </div>
+
+        <!-- Real-Time Analytics -->
+        <div class="animate-on-scroll delay-200 bg-white rounded-2xl p-8 border border-slate-200 hover:border-pulse-300 hover:shadow-lg hover:shadow-pulse-500/5 transition-all duration-300 group">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5 group-hover:bg-emerald-100 transition-colors">
+            <svg class="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mb-2">Real-Time Analytics</h3>
+          <p class="text-slate-500 leading-relaxed">Live visitor count, activity feed, instant data processing with Redis buffering. See who's on your site right now.</p>
+        </div>
+
+        <!-- Lightweight Script -->
+        <div class="animate-on-scroll delay-100 bg-white rounded-2xl p-8 border border-slate-200 hover:border-pulse-300 hover:shadow-lg hover:shadow-pulse-500/5 transition-all duration-300 group">
+          <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center mb-5 group-hover:bg-amber-100 transition-colors">
+            <svg class="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mb-2">Lightweight Script</h3>
+          <p class="text-slate-500 leading-relaxed">Under 4KB tracking script. Opt-in features via data attributes. Zero impact on page speed. Uses sendBeacon for reliable delivery.</p>
+        </div>
+
+        <!-- Self-Hosted -->
+        <div class="animate-on-scroll delay-200 bg-white rounded-2xl p-8 border border-slate-200 hover:border-pulse-300 hover:shadow-lg hover:shadow-pulse-500/5 transition-all duration-300 group">
+          <div class="w-12 h-12 rounded-xl bg-sky-50 flex items-center justify-center mb-5 group-hover:bg-sky-100 transition-colors">
+            <svg class="w-6 h-6 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mb-2">Self-Hosted</h3>
+          <p class="text-slate-500 leading-relaxed">Deploy on your own infrastructure. Full data ownership. No third-party tracking. Your data never leaves your servers.</p>
+        </div>
+
+        <!-- TypeScript SDK -->
+        <div class="animate-on-scroll delay-300 bg-white rounded-2xl p-8 border border-slate-200 hover:border-pulse-300 hover:shadow-lg hover:shadow-pulse-500/5 transition-all duration-300 group">
+          <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center mb-5 group-hover:bg-blue-100 transition-colors">
+            <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mb-2">TypeScript SDK</h3>
+          <p class="text-slate-500 leading-relaxed">Client and server SDKs with full type safety. Auto-tracking for SPAs. sendBeacon for reliability. Framework agnostic.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modules Showcase -->
+  <section id="modules" class="py-20 sm:py-28 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 relative overflow-hidden">
+    <div class="absolute inset-0" style="background-image: radial-gradient(rgba(99, 102, 241, 0.06) 1px, transparent 1px); background-size: 32px 32px;"></div>
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-12">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-white">23 Modules. Enable What You Need.</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-400 max-w-2xl mx-auto">Each module can be independently enabled, disabled, or set to read-only. Pay no performance cost for features you don't use.</p>
+      </div>
+
+      <!-- Tabs -->
+      <div class="animate-on-scroll delay-200 flex flex-wrap justify-center gap-2 mb-10">
+        <button onclick="switchTab('tracking')" class="module-tab active px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent rounded-t-lg hover:text-white transition-colors" data-tab="tracking">Tracking</button>
+        <button onclick="switchTab('analysis')" class="module-tab px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent rounded-t-lg hover:text-white transition-colors" data-tab="analysis">Analysis</button>
+        <button onclick="switchTab('export')" class="module-tab px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent rounded-t-lg hover:text-white transition-colors" data-tab="export">Export</button>
+        <button onclick="switchTab('advanced')" class="module-tab px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent rounded-t-lg hover:text-white transition-colors" data-tab="advanced">Advanced</button>
+      </div>
+
+      <!-- Tracking Modules -->
+      <div id="panel-tracking" class="module-panel active grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">UTM/Campaign Tracking</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Parse and report on utm_source, utm_medium, utm_campaign parameters automatically.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Core Web Vitals</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">LCP, FCP, CLS, INP, TTFB with PerformanceObserver. Track real user performance.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Scroll Depth</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Track how far users scroll on each page, from 0-100% with configurable thresholds.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Revenue Tracking</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Attach revenue values to events. Track MRR, ARPU, and conversion value by source.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Site Search</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Track internal search queries, results count, and click-through on search results.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Outlinks</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">External link clicks and file downloads. Know where your users go after your site.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Error Tracking</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">JS errors with stack traces, automatic grouping, and frequency analysis.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Click Heatmaps</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Record click coordinates for heatmap visualization. Understand where users click.</p>
+        </div>
+      </div>
+
+      <!-- Analysis Modules -->
+      <div id="panel-analysis" class="module-panel grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Funnels</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">User-defined multi-step conversion funnels with drop-off rates and time-between-steps.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Goals</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Pageview, event, and duration-based conversion tracking with source attribution.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Retention</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">D1/D7/D30 returning visitor analysis. Understand how well you retain your audience.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Cohorts</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Group users by acquisition date or source and track behavior over time.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all lg:col-start-2">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Path Analysis</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">User journey visualization. See the most common paths through your site.</p>
+        </div>
+      </div>
+
+      <!-- Export Modules -->
+      <div id="panel-export" class="module-panel grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">CSV Export</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Download any report as CSV. Export pageviews, events, funnels, and more.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Shared Dashboards</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Generate public shareable dashboard links for stakeholders and clients.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Email Reports</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Scheduled daily, weekly, or monthly digest reports delivered to your inbox.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Alerts</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Threshold-based metric alerting. Get notified when traffic spikes or drops.</p>
+        </div>
+      </div>
+
+      <!-- Advanced Modules -->
+      <div id="panel-advanced" class="module-panel grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">A/B Testing</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Run experiments with weighted variants. Statistical significance tracking built in.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Session Replay</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Record and replay user sessions to understand UX issues and user behavior.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Surveys</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">In-app surveys with targeting rules. Collect qualitative feedback alongside quantitative data.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">AI Queries</h4>
+            <div class="w-10 h-5 rounded-full bg-slate-600 relative"><div class="w-4 h-4 rounded-full bg-slate-400 absolute left-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Natural language analytics queries. Ask questions in plain English. <span class="text-pulse-400 text-xs font-medium">Coming soon</span></p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all lg:col-start-2">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Predictions</h4>
+            <div class="w-10 h-5 rounded-full bg-slate-600 relative"><div class="w-4 h-4 rounded-full bg-slate-400 absolute left-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Churn probability and trend forecasting using historical data. <span class="text-pulse-400 text-xs font-medium">Coming soon</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Code Examples -->
+  <section id="developers" class="py-20 sm:py-28 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-slate-900">Built for Developers</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-500 max-w-2xl mx-auto">Clean APIs, comprehensive documentation, and SDKs that get out of your way.</p>
+      </div>
+
+      <div class="grid lg:grid-cols-3 gap-6">
+        <!-- Example 1 -->
+        <div class="animate-on-scroll">
+          <div class="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800">
+            <div class="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border-b border-slate-700">
+              <div class="flex gap-1.5">
+                <div class="w-2.5 h-2.5 rounded-full bg-red-500/60"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-yellow-500/60"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-green-500/60"></div>
+              </div>
+              <span class="text-xs text-slate-500 ml-2">Track Events</span>
+            </div>
+            <div class="p-5">
+              <pre class="text-sm leading-relaxed overflow-x-auto"><code><span class="text-slate-500">// Track a purchase event</span>
+<span class="text-blue-400">pulse</span>(<span class="text-yellow-300">"event"</span>,
+  <span class="text-yellow-300">"purchase"</span>,
+  { <span class="text-purple-300">plan</span>: <span class="text-yellow-300">"pro"</span> },
+  <span class="text-emerald-400">49.99</span>,
+  <span class="text-yellow-300">"USD"</span>
+);</code></pre>
+            </div>
+          </div>
+          <p class="mt-4 text-sm text-slate-500">Track custom events with properties, revenue values, and currency. All via a single function call.</p>
+        </div>
+
+        <!-- Example 2 -->
+        <div class="animate-on-scroll delay-200">
+          <div class="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800">
+            <div class="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border-b border-slate-700">
+              <div class="flex gap-1.5">
+                <div class="w-2.5 h-2.5 rounded-full bg-red-500/60"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-yellow-500/60"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-green-500/60"></div>
+              </div>
+              <span class="text-xs text-slate-500 ml-2">Create a Funnel</span>
+            </div>
+            <div class="p-5">
+              <pre class="text-sm leading-relaxed overflow-x-auto"><code><span class="text-emerald-400">curl</span> -X POST \
+  <span class="text-yellow-300">https://pulse.ayushojha.com
+  /api/v1/funnels</span> \
+  -H <span class="text-yellow-300">"X-Pulse-Key: pa_live_..."</span> \
+  -d <span class="text-yellow-300">'{
+  "name": "Signup Flow",
+  "steps": [
+    {"type":"url",
+     "value":"/",
+     "label":"Homepage"},
+    {"type":"url",
+     "value":"/pricing",
+     "label":"Pricing"},
+    {"type":"event",
+     "value":"signup",
+     "label":"Sign Up"}
+  ]
+}'</span></code></pre>
+            </div>
+          </div>
+          <p class="mt-4 text-sm text-slate-500">Define multi-step funnels via API. Track conversion rates and identify drop-off points.</p>
+        </div>
+
+        <!-- Example 3 -->
+        <div class="animate-on-scroll delay-400">
+          <div class="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800">
+            <div class="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border-b border-slate-700">
+              <div class="flex gap-1.5">
+                <div class="w-2.5 h-2.5 rounded-full bg-red-500/60"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-yellow-500/60"></div>
+                <div class="w-2.5 h-2.5 rounded-full bg-green-500/60"></div>
+              </div>
+              <span class="text-xs text-slate-500 ml-2">Configure Modules</span>
+            </div>
+            <div class="p-5">
+              <pre class="text-sm leading-relaxed overflow-x-auto"><code><span class="text-emerald-400">curl</span> -X PUT \
+  <span class="text-yellow-300">https://pulse.ayushojha.com
+  /api/admin/projects/{id}
+  /modules</span> \
+  -H <span class="text-yellow-300">"Authorization:
+    Bearer &lt;admin_token&gt;"</span> \
+  -d <span class="text-yellow-300">'{
+  "modules": {
+    "funnels": {
+      "enabled": true,
+      "access": "all"
+    },
+    "webvitals": {
+      "enabled": true,
+      "access": "read"
+    },
+    "heatmaps": {
+      "enabled": false
+    }
+  }
+}'</span></code></pre>
+            </div>
+          </div>
+          <p class="mt-4 text-sm text-slate-500">Enable or disable modules per-project. Set granular read/write access controls.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison Section -->
+  <section id="comparison" class="py-20 sm:py-28 bg-slate-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-slate-900">How Pulse Compares</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-500 max-w-2xl mx-auto">The depth of PostHog with the simplicity of Plausible, and the privacy of neither GA4 nor any third-party tool.</p>
+      </div>
+
+      <div class="animate-on-scroll delay-200 overflow-x-auto">
+        <table class="w-full min-w-[640px] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          <thead>
+            <tr class="border-b border-slate-200">
+              <th class="text-left py-4 px-6 text-sm font-semibold text-slate-900 bg-slate-50">Feature</th>
+              <th class="py-4 px-4 text-sm font-semibold text-center bg-pulse-50 text-pulse-700">
+                <div class="flex flex-col items-center">
+                  <svg class="w-5 h-5 mb-1" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M8 20L12 14L16 17L20 10L24 13" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Pulse
+                </div>
+              </th>
+              <th class="py-4 px-4 text-sm font-semibold text-center text-slate-600">Plausible</th>
+              <th class="py-4 px-4 text-sm font-semibold text-center text-slate-600">PostHog</th>
+              <th class="py-4 px-4 text-sm font-semibold text-center text-slate-600">GA4</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Funnel Analysis</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Cohort Analysis</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">A/B Testing</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Session Replay</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Heatmaps</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Error Tracking</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Surveys</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Self-Hosted</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Cookie-Free</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><span class="text-xs text-amber-500 font-medium">Config</span></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Modular</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Open Source</td>
+              <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
+              <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- API at a Glance -->
+  <section id="api" class="py-20 sm:py-28 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 relative overflow-hidden">
+    <div class="absolute inset-0" style="background-image: radial-gradient(rgba(99, 102, 241, 0.05) 1px, transparent 1px); background-size: 24px 24px;"></div>
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-white">100+ API Endpoints</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-400 max-w-2xl mx-auto">A comprehensive REST API for every feature. Fully documented with request/response examples.</p>
+      </div>
+
+      <div class="animate-on-scroll delay-200 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-w-5xl mx-auto">
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Core Analytics</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">8</span>
+          </div>
+          <p class="text-xs text-slate-500">Pageviews, visitors, sessions, real-time, top pages, referrers, devices, locations</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Funnels</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">6</span>
+          </div>
+          <p class="text-xs text-slate-500">Create, list, get, update, delete funnels, get funnel results</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Goals</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">6</span>
+          </div>
+          <p class="text-xs text-slate-500">Create, list, get, update, delete goals, get goal conversions</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Campaigns</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">4</span>
+          </div>
+          <p class="text-xs text-slate-500">UTM sources, mediums, campaigns, campaign performance</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Web Vitals</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">3</span>
+          </div>
+          <p class="text-xs text-slate-500">Core web vitals summary, per-page metrics, histograms</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Error Tracking</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">4</span>
+          </div>
+          <p class="text-xs text-slate-500">List errors, error groups, error details, resolve errors</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">A/B Testing</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">7</span>
+          </div>
+          <p class="text-xs text-slate-500">Experiments CRUD, variants, results, statistical significance</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Surveys</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">8</span>
+          </div>
+          <p class="text-xs text-slate-500">Create, target, collect, analyze survey responses</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Exports</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">7</span>
+          </div>
+          <p class="text-xs text-slate-500">CSV exports for pageviews, events, funnels, goals, campaigns, vitals, errors</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Alerts</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">5</span>
+          </div>
+          <p class="text-xs text-slate-500">Create, list, update, delete, test alert rules</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all sm:col-span-2 lg:col-span-1">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Admin</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">13</span>
+          </div>
+          <p class="text-xs text-slate-500">Projects, API keys, modules, webhooks, data retention, rollups</p>
+        </div>
+      </div>
+
+      <div class="animate-on-scroll delay-300 text-center mt-12">
+        <a href="/api/docs" class="inline-flex items-center gap-2 text-pulse-400 hover:text-pulse-300 font-medium transition-colors group">
+          Full Documentation
+          <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section id="pricing" class="py-20 sm:py-28 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-slate-900">Simple, Transparent Pricing</h2>
+        <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-500 max-w-2xl mx-auto">Self-host for free, forever. All features included. No usage limits.</p>
+      </div>
+
+      <div class="animate-on-scroll delay-200 max-w-lg mx-auto">
+        <div class="bg-gradient-to-br from-slate-900 to-indigo-950 rounded-3xl p-8 sm:p-10 text-center border border-slate-700 shadow-2xl">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
+            <span class="text-sm text-emerald-400 font-medium">Free &amp; Open Source</span>
+          </div>
+          <div class="mb-6">
+            <span class="text-5xl font-extrabold text-white">$0</span>
+            <span class="text-slate-400 ml-2">/forever</span>
+          </div>
+          <ul class="text-left space-y-3 mb-8">
+            <li class="flex items-center gap-3 text-slate-300 text-sm">
+              <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+              All 23 modules included
+            </li>
+            <li class="flex items-center gap-3 text-slate-300 text-sm">
+              <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+              Unlimited projects and sites
+            </li>
+            <li class="flex items-center gap-3 text-slate-300 text-sm">
+              <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+              Unlimited pageviews and events
+            </li>
+            <li class="flex items-center gap-3 text-slate-300 text-sm">
+              <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+              100+ REST API endpoints
+            </li>
+            <li class="flex items-center gap-3 text-slate-300 text-sm">
+              <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+              Full data ownership
+            </li>
+            <li class="flex items-center gap-3 text-slate-300 text-sm">
+              <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+              Community support
+            </li>
+          </ul>
+          <a href="#quickstart" class="block w-full py-3.5 text-base font-semibold text-white bg-pulse-500 rounded-xl hover:bg-pulse-600 transition-all shadow-lg shadow-pulse-500/25">
+            Deploy Now
+          </a>
+          <p class="text-xs text-slate-500 mt-4">Docker image + PostgreSQL + Redis. That's all you need.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-slate-900 border-t border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <!-- Brand -->
+        <div class="flex items-center gap-3">
+          <svg class="w-7 h-7" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="#6366f1"/>
+            <path d="M8 20L12 14L16 17L20 10L24 13" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="13" r="2" fill="white"/>
+          </svg>
+          <span class="text-lg font-bold text-white">Pulse Analytics</span>
+        </div>
+
+        <!-- Links -->
+        <div class="flex items-center gap-8">
+          <a href="/dashboard" class="text-sm text-slate-400 hover:text-white transition-colors">Dashboard</a>
+          <a href="/api/docs" class="text-sm text-slate-400 hover:text-white transition-colors">API Docs</a>
+          <a href="https://github.com/Ayush10/analytics-service" class="text-sm text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            GitHub
+          </a>
+        </div>
+
+        <!-- Tagline -->
+        <p class="text-sm text-slate-500">Self-hosted. Privacy-first. Built with Rust.</p>
+      </div>
+
+      <div class="mt-8 pt-8 border-t border-slate-800 text-center">
+        <p class="text-xs text-slate-600">&copy; 2026 Pulse Analytics. Open source under the MIT License.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- JavaScript -->
+  <script>
+    // Navbar scroll effect
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 50) {
+        navbar.classList.add('nav-scrolled');
+      } else {
+        navbar.classList.remove('nav-scrolled');
+      }
+    });
+
+    // Mobile menu toggle
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    mobileMenuBtn.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+
+    // Close mobile menu on link click
+    mobileMenu.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        mobileMenu.classList.add('hidden');
+      });
+    });
+
+    // Scroll animations with IntersectionObserver
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
+    });
+
+    document.querySelectorAll('.animate-on-scroll').forEach(el => {
+      observer.observe(el);
+    });
+
+    // Module tabs
+    function switchTab(tabName) {
+      // Update tab styles
+      document.querySelectorAll('.module-tab').forEach(tab => {
+        tab.classList.remove('active', 'text-pulse-400', 'border-pulse-500');
+        tab.classList.add('text-slate-400');
+      });
+      const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
+      activeTab.classList.add('active', 'text-pulse-400', 'border-pulse-500');
+      activeTab.classList.remove('text-slate-400');
+
+      // Update panels
+      document.querySelectorAll('.module-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.getElementById(`panel-${tabName}`).classList.add('active');
+    }
+  </script>
+</body>
+</html>

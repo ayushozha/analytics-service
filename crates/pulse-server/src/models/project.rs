@@ -26,7 +26,7 @@ pub struct CreateProject {
 }
 
 fn default_settings() -> serde_json::Value {
-    serde_json::json!({ "retention_days": 365 })
+    crate::models::module::default_project_settings()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -41,6 +41,7 @@ pub struct ApiKeyRow {
     pub expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub is_active: bool,
+    pub allowed_modules: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +50,8 @@ pub struct CreateApiKey {
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
     pub expires_at: Option<DateTime<Utc>>,
+    /// Restrict this key to specific modules. Empty/null = all enabled modules.
+    pub allowed_modules: Option<Vec<String>>,
 }
 
 fn default_scopes() -> Vec<String> {
@@ -69,4 +72,6 @@ pub struct ApiKeyResponse {
 pub struct ResolvedKey {
     pub project_id: Uuid,
     pub scopes: Vec<String>,
+    #[serde(default)]
+    pub allowed_modules: Option<Vec<String>>,
 }

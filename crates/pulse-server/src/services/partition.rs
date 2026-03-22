@@ -44,7 +44,19 @@ async fn ensure_partitions(db: &PgPool) -> Result<(), anyhow::Error> {
     let now = Utc::now().date_naive();
     let target = now + Months::new(3);
 
-    for parent_table in ["pageviews", "events"] {
+    let partitioned_tables = [
+        "pageviews",
+        "events",
+        "goal_conversions",
+        "web_vitals",
+        "scroll_depths",
+        "search_queries",
+        "outlinks",
+        "js_errors",
+        "click_events",
+        "experiment_assignments",
+    ];
+    for parent_table in partitioned_tables {
         let existing = get_existing_partition_months(db, parent_table).await?;
         let mut month = first_of_month(now);
 

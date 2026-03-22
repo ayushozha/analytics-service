@@ -10,5 +10,7 @@ pub struct BufferedEvent {
     pub event_name: String,
     pub event_data: Option<serde_json::Value>,
     pub path: Option<String>,
+    pub revenue_amount: Option<f64>,
+    pub revenue_currency: Option<String>,
     pub created_at: DateTime<Utc>,
 }

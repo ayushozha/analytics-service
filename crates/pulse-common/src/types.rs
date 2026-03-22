@@ -8,6 +8,19 @@ pub enum CollectRequest {
     Pageview { payload: PageviewPayload },
     Event { payload: EventPayload },
     Identify { payload: IdentifyPayload },
+    #[serde(rename = "web_vital")]
+    WebVital { payload: WebVitalPayload },
+    #[serde(rename = "scroll_depth")]
+    ScrollDepth { payload: ScrollDepthPayload },
+    #[serde(rename = "search_query")]
+    SearchQuery { payload: SearchQueryPayload },
+    Outlink { payload: OutlinkPayload },
+    #[serde(rename = "js_error")]
+    JsError { payload: JsErrorPayload },
+    #[serde(rename = "click_event")]
+    ClickEvent { payload: ClickEventPayload },
+    #[serde(rename = "survey_response")]
+    SurveyResponse { payload: SurveyResponsePayload },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +43,16 @@ pub struct PageviewPayload {
     pub screen: Option<String>,
     #[serde(default)]
     pub language: Option<String>,
+    #[serde(default)]
+    pub utm_source: Option<String>,
+    #[serde(default)]
+    pub utm_medium: Option<String>,
+    #[serde(default)]
+    pub utm_campaign: Option<String>,
+    #[serde(default)]
+    pub utm_content: Option<String>,
+    #[serde(default)]
+    pub utm_term: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,11 +62,86 @@ pub struct EventPayload {
     pub data: Option<serde_json::Value>,
     #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
+    pub revenue_amount: Option<f64>,
+    #[serde(default)]
+    pub revenue_currency: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentifyPayload {
     pub traits: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebVitalPayload {
+    pub name: String,
+    pub value: f64,
+    #[serde(default)]
+    pub rating: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrollDepthPayload {
+    pub path: String,
+    pub max_depth: i16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchQueryPayload {
+    pub query: String,
+    #[serde(default)]
+    pub results_count: Option<i32>,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutlinkPayload {
+    pub url: String,
+    pub link_type: String,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsErrorPayload {
+    pub message: String,
+    #[serde(default)]
+    pub stack: Option<String>,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub lineno: Option<i32>,
+    #[serde(default)]
+    pub colno: Option<i32>,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClickEventPayload {
+    pub path: String,
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub element_selector: Option<String>,
+    #[serde(default)]
+    pub viewport_width: Option<i32>,
+    #[serde(default)]
+    pub viewport_height: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SurveyResponsePayload {
+    pub survey_id: String,
+    pub answers: serde_json::Value,
+    #[serde(default)]
+    pub completed: Option<bool>,
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

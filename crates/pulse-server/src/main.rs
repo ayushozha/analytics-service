@@ -10,7 +10,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::middleware as axum_mw;
-use axum::response::Redirect;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
 use maxminddb::Reader;
@@ -115,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Query routes (API key auth with query scope)
     let query_routes = Router::new()
+        // Core analytics
         .route("/api/v1/stats", get(routes::query::get_stats))
         .route("/api/v1/stats/timeseries", get(routes::query::get_timeseries))
         .route("/api/v1/pages", get(routes::query::get_pages))
@@ -123,6 +123,57 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/devices", get(routes::query::get_devices))
         .route("/api/v1/geo", get(routes::query::get_geo))
         .route("/api/v1/realtime", get(routes::query::get_realtime))
+        // Funnels
+        .route("/api/v1/funnels", get(routes::features::list_funnels).post(routes::features::create_funnel))
+        .route("/api/v1/funnels/{id}", get(routes::features::get_funnel).put(routes::features::update_funnel).delete(routes::features::delete_funnel))
+        .route("/api/v1/funnels/{id}/analyze", get(routes::features::analyze_funnel))
+        // Goals
+        .route("/api/v1/goals", get(routes::features::list_goals).post(routes::features::create_goal))
+        .route("/api/v1/goals/{id}", get(routes::features::get_goal).put(routes::features::update_goal).delete(routes::features::delete_goal))
+        .route("/api/v1/goals/{id}/stats", get(routes::features::get_goal_stats))
+        // Retention & Cohorts & Paths
+        .route("/api/v1/retention", get(routes::features::get_retention))
+        .route("/api/v1/cohorts", get(routes::features::get_cohorts))
+        .route("/api/v1/paths", get(routes::features::get_paths))
+        // Campaigns
+        .route("/api/v1/campaigns", get(routes::features::get_campaigns))
+        .route("/api/v1/campaigns/sources", get(routes::features::get_sources))
+        .route("/api/v1/campaigns/mediums", get(routes::features::get_mediums))
+        .route("/api/v1/campaigns/timeseries", get(routes::features::get_campaign_timeseries))
+        // CSV Exports
+        .route("/api/v1/exports/{report_type}", get(routes::features_ext::export_csv))
+        // Shared Dashboards
+        .route("/api/v1/sharing", get(routes::features_ext::list_shared_dashboards).post(routes::features_ext::create_shared_dashboard))
+        .route("/api/v1/sharing/{id}", axum::routing::delete(routes::features_ext::delete_shared_dashboard))
+        // Alerts
+        .route("/api/v1/alerts", get(routes::features_ext::list_alerts).post(routes::features_ext::create_alert))
+        .route("/api/v1/alerts/{id}", axum::routing::put(routes::features_ext::update_alert).delete(routes::features_ext::delete_alert))
+        .route("/api/v1/alerts/{id}/toggle", post(routes::features_ext::toggle_alert))
+        // Experiments
+        .route("/api/v1/experiments", get(routes::features_ext::list_experiments).post(routes::features_ext::create_experiment))
+        .route("/api/v1/experiments/{id}", get(routes::features_ext::get_experiment).delete(routes::features_ext::delete_experiment))
+        .route("/api/v1/experiments/{id}/status", axum::routing::put(routes::features_ext::update_experiment_status))
+        .route("/api/v1/experiments/{id}/results", get(routes::features_ext::get_experiment_results))
+        .route("/api/v1/experiments/{id}/assign", post(routes::features_ext::assign_experiment_visitor))
+        // Surveys
+        .route("/api/v1/surveys", get(routes::features_ext::list_surveys).post(routes::features_ext::create_survey))
+        .route("/api/v1/surveys/active", get(routes::features_ext::get_active_surveys))
+        .route("/api/v1/surveys/{id}", get(routes::features_ext::get_survey).put(routes::features_ext::update_survey).delete(routes::features_ext::delete_survey))
+        .route("/api/v1/surveys/{id}/status", axum::routing::put(routes::features_ext::update_survey_status))
+        .route("/api/v1/surveys/{id}/responses", get(routes::features_ext::get_survey_responses))
+        .route("/api/v1/surveys/{id}/stats", get(routes::features_ext::get_survey_stats))
+        // Web Vitals
+        .route("/api/v1/webvitals", get(routes::features_ext::get_vitals_summary))
+        .route("/api/v1/webvitals/pages", get(routes::features_ext::get_vitals_by_page))
+        .route("/api/v1/webvitals/timeseries", get(routes::features_ext::get_vitals_timeseries))
+        // Error Tracking
+        .route("/api/v1/errors", get(routes::features_ext::get_error_groups))
+        .route("/api/v1/errors/detail", get(routes::features_ext::get_error_detail))
+        .route("/api/v1/errors/timeseries", get(routes::features_ext::get_error_timeseries))
+        .route("/api/v1/errors/stats", get(routes::features_ext::get_error_stats))
+        // Heatmaps
+        .route("/api/v1/heatmaps", get(routes::features_ext::get_click_heatmap))
+        .route("/api/v1/heatmaps/stats", get(routes::features_ext::get_click_stats))
         .layer(axum_mw::from_fn(middleware::auth::auth_middleware));
 
     // Admin routes (admin token auth)
@@ -154,6 +205,23 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/admin/projects/{id}/webhooks/{webhook_id}/test",
             post(routes::admin::test_webhook),
+        )
+        // Module management
+        .route(
+            "/api/admin/projects/{id}/modules",
+            get(routes::admin::list_modules).put(routes::admin::update_modules),
+        )
+        .route(
+            "/api/admin/projects/{id}/modules/{module_name}/enable",
+            post(routes::admin::enable_module),
+        )
+        .route(
+            "/api/admin/projects/{id}/modules/{module_name}/disable",
+            post(routes::admin::disable_module),
+        )
+        .route(
+            "/api/admin/projects/{id}/modules/{module_name}/access",
+            axum::routing::put(routes::admin::update_module_access),
         )
         .layer(axum_mw::from_fn(middleware::auth::admin_auth_middleware));
 
@@ -200,10 +268,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Public routes (no auth)
     let public_routes = Router::new()
-        .route("/", get(|| async { Redirect::permanent("/dashboard") }))
+        .route("/", get(routes::docs::serve_home))
         .route("/health", get(routes::health::health_check))
         .route("/api/script.js", get(routes::script::serve_script))
-        .route("/docs", get(routes::docs::serve_docs));
+        .route("/api/docs", get(routes::docs::serve_docs))
+        .route("/docs", get(routes::docs::redirect_docs));
 
     let app = Router::new()
         .merge(ingest_routes)
