@@ -923,6 +923,8 @@ pub async fn htmx_visitor_sessions(
         } else {
             ""
         };
+        let once_attr = "once";
+        let transition_cls = "transition-transform";
 
         html.push_str(&format!(
             r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -930,7 +932,7 @@ pub async fn htmx_visitor_sessions(
                      hx-get="/dashboard/api/visitor/{visitor_id}/session/{sid}/detail"
                      hx-target="#session-detail-{sid}"
                      hx-swap="innerHTML"
-                     hx-trigger="click once">
+                     hx-trigger="click {once_attr}">
                     <div class="flex items-center gap-4">
                         <div class="flex items-center gap-2">
                             <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -944,7 +946,7 @@ pub async fn htmx_visitor_sessions(
                     <div class="flex items-center gap-3 text-xs text-gray-400">
                         <span>{browser}</span>
                         <span>{country}</span>
-                        <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        <svg class="w-4 h-4 {transition_cls}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                     </div>
                 </div>
                 <div class="text-xs text-gray-400 px-4 pb-2 flex gap-2">
