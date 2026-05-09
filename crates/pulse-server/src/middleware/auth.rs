@@ -58,7 +58,11 @@ pub async fn auth_middleware(
             request.uri().query().and_then(|q| {
                 q.split('&').find_map(|pair| {
                     let (k, v) = pair.split_once('=')?;
-                    if k == "key" { Some(v.to_string()) } else { None }
+                    if k == "key" {
+                        Some(v.to_string())
+                    } else {
+                        None
+                    }
                 })
             })
         })
@@ -84,7 +88,11 @@ pub async fn auth_middleware(
         .await?;
 
         let (project_id, scopes, allowed_modules) = row.ok_or(AppError::Unauthorized)?;
-        let resolved = ResolvedKey { project_id, scopes, allowed_modules };
+        let resolved = ResolvedKey {
+            project_id,
+            scopes,
+            allowed_modules,
+        };
 
         // Cache the result
         if let Ok(serialized) = serde_json::to_string(&resolved) {

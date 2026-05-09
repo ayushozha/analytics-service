@@ -176,11 +176,7 @@ pub async fn export_referrers_csv(
 
     let mut csv = String::from("referrer_domain,visits\n");
     for r in &rows {
-        csv.push_str(&format!(
-            "\"{}\",{}\n",
-            r.0.replace('"', "\"\""),
-            r.1
-        ));
+        csv.push_str(&format!("\"{}\",{}\n", r.0.replace('"', "\"\""), r.1));
     }
     Ok(csv)
 }
@@ -227,11 +223,7 @@ pub async fn export_events_csv(
 
     let mut csv = String::from("event_name,count\n");
     for r in &rows {
-        csv.push_str(&format!(
-            "\"{}\",{}\n",
-            r.0.replace('"', "\"\""),
-            r.1
-        ));
+        csv.push_str(&format!("\"{}\",{}\n", r.0.replace('"', "\"\""), r.1));
     }
     Ok(csv)
 }

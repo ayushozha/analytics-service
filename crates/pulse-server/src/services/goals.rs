@@ -91,9 +91,7 @@ pub async fn update_goal(
     match goal_type {
         "pageview" | "event" | "duration" | "pages_per_session" => {}
         other => {
-            return Err(AppError::BadRequest(format!(
-                "Invalid goal type: {other}"
-            )));
+            return Err(AppError::BadRequest(format!("Invalid goal type: {other}")));
         }
     }
 

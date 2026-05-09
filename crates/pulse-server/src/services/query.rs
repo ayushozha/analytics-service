@@ -48,7 +48,11 @@ pub async fn fetch_stats(
     let end_date = end.date_naive();
     if end_date >= today {
         let today_start = today.and_hms_opt(0, 0, 0).unwrap().and_utc();
-        let raw_start = if start > today_start { start } else { today_start };
+        let raw_start = if start > today_start {
+            start
+        } else {
+            today_start
+        };
 
         let raw: (i64, i64, i64) = sqlx::query_as(
             "SELECT COUNT(*), COUNT(DISTINCT visitor_id), COUNT(DISTINCT session_id) \
@@ -113,7 +117,11 @@ pub async fn fetch_events_count(
     let end_date = end.date_naive();
     if end_date >= today {
         let today_start = today.and_hms_opt(0, 0, 0).unwrap().and_utc();
-        let raw_start = if start > today_start { start } else { today_start };
+        let raw_start = if start > today_start {
+            start
+        } else {
+            today_start
+        };
 
         let raw: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM events WHERE project_id = $1 \
@@ -457,10 +465,7 @@ pub async fn fetch_geo(
         .collect())
 }
 
-pub async fn fetch_realtime(
-    state: &SharedState,
-    project_id: Uuid,
-) -> Result<i64, anyhow::Error> {
+pub async fn fetch_realtime(state: &SharedState, project_id: Uuid) -> Result<i64, anyhow::Error> {
     let key = state.redis_key(&format!("realtime:{}", project_id));
     let mut redis = state.redis.clone();
 
@@ -489,9 +494,18 @@ pub async fn fetch_visitors_list(
 ) -> Result<Vec<serde_json::Value>, sqlx::Error> {
     let search_pattern = search.map(|s| format!("{s}%"));
 
-    let rows: Vec<(String, i64, i64, i64, DateTime<Utc>, DateTime<Utc>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT s.visitor_id, COUNT(DISTINCT s.id)::bigint, \
+    let rows: Vec<(
+        String,
+        i64,
+        i64,
+        i64,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT s.visitor_id, COUNT(DISTINCT s.id)::bigint, \
              COALESCE(SUM(s.pageview_count), 0)::bigint, \
              COALESCE(SUM(s.event_count), 0)::bigint, \
              MAX(s.last_at), MIN(s.first_at), \
@@ -503,15 +517,15 @@ pub async fn fetch_visitors_list(
              AND ($6::text IS NULL OR s.visitor_id LIKE $6) \
              GROUP BY s.visitor_id ORDER BY MAX(s.last_at) DESC \
              LIMIT $4 OFFSET $5",
-        )
-        .bind(project_id)
-        .bind(start)
-        .bind(end)
-        .bind(limit)
-        .bind(offset)
-        .bind(&search_pattern)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(project_id)
+    .bind(start)
+    .bind(end)
+    .bind(limit)
+    .bind(offset)
+    .bind(&search_pattern)
+    .fetch_all(db)
+    .await?;
 
     Ok(rows
         .iter()
@@ -536,7 +550,13 @@ pub async fn fetch_recent_activity(
     project_id: Uuid,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>, sqlx::Error> {
-    let rows: Vec<(String, String, Option<String>, Option<String>, DateTime<Utc>)> = sqlx::query_as(
+    let rows: Vec<(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
         r#"SELECT activity_type, visitor_id, detail, event_name, created_at FROM (
             (SELECT 'pageview'::text as activity_type, visitor_id, path as detail,
              NULL::text as event_name, created_at
@@ -575,8 +595,18 @@ pub async fn fetch_visitor_summary(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<serde_json::Value, sqlx::Error> {
-    let row: (i64, i64, i64, Option<DateTime<Utc>>, Option<DateTime<Utc>>, i64,
-              Option<String>, Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+    let row: (
+        i64,
+        i64,
+        i64,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        i64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as(
         "SELECT COUNT(DISTINCT s.id)::bigint, \
          COALESCE(SUM(s.pageview_count), 0)::bigint, \
          COALESCE(SUM(s.event_count), 0)::bigint, \
@@ -632,22 +662,34 @@ pub async fn fetch_visitor_sessions(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<Vec<serde_json::Value>, sqlx::Error> {
-    let rows: Vec<(Uuid, DateTime<Utc>, DateTime<Utc>, Option<String>, Option<String>,
-                   i32, i32, i64, bool, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT id, first_at, last_at, entry_page, exit_page, pageview_count, \
+    let rows: Vec<(
+        Uuid,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        i32,
+        i32,
+        i64,
+        bool,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT id, first_at, last_at, entry_page, exit_page, pageview_count, \
              event_count, duration_ms, is_bounce, browser, os, device, country \
              FROM sessions \
              WHERE project_id = $1 AND visitor_id = $2 \
              AND first_at >= $3 AND first_at <= $4 \
              ORDER BY first_at DESC LIMIT 100",
-        )
-        .bind(project_id)
-        .bind(visitor_id)
-        .bind(start)
-        .bind(end)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(project_id)
+    .bind(visitor_id)
+    .bind(start)
+    .bind(end)
+    .fetch_all(db)
+    .await?;
 
     Ok(rows
         .iter()
@@ -676,27 +718,36 @@ pub async fn fetch_session_detail(
     project_id: Uuid,
     session_id: Uuid,
 ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), sqlx::Error> {
-    let pv_rows: Vec<(String, Option<String>, Option<String>, Option<i32>, DateTime<Utc>)> =
-        sqlx::query_as(
-            "SELECT path, title, referrer, duration_ms, created_at \
+    let pv_rows: Vec<(
+        String,
+        Option<String>,
+        Option<String>,
+        Option<i32>,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        "SELECT path, title, referrer, duration_ms, created_at \
              FROM pageviews WHERE project_id = $1 AND session_id = $2 \
              ORDER BY created_at ASC",
-        )
-        .bind(project_id)
-        .bind(session_id)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(project_id)
+    .bind(session_id)
+    .fetch_all(db)
+    .await?;
 
-    let ev_rows: Vec<(String, Option<serde_json::Value>, Option<String>, DateTime<Utc>)> =
-        sqlx::query_as(
-            "SELECT event_name, event_data, path, created_at \
+    let ev_rows: Vec<(
+        String,
+        Option<serde_json::Value>,
+        Option<String>,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        "SELECT event_name, event_data, path, created_at \
              FROM events WHERE project_id = $1 AND session_id = $2 \
              ORDER BY created_at ASC",
-        )
-        .bind(project_id)
-        .bind(session_id)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(project_id)
+    .bind(session_id)
+    .fetch_all(db)
+    .await?;
 
     let pageviews = pv_rows
         .iter()
@@ -809,7 +860,11 @@ pub async fn fetch_pricing_stats(
 
     if end_date >= today {
         let today_start = today.and_hms_opt(0, 0, 0).unwrap().and_utc();
-        let raw_start = if start > today_start { start } else { today_start };
+        let raw_start = if start > today_start {
+            start
+        } else {
+            today_start
+        };
 
         let raw: (i64, i64, f64) = sqlx::query_as(
             "SELECT COUNT(*)::bigint, COUNT(DISTINCT visitor_id)::bigint, \
@@ -924,7 +979,7 @@ pub async fn fetch_pricing_frequency(
     .await?;
 
     // Bucket into 1x, 2x, 3x, 4x, 5x+
-    let mut buckets = vec![0i64; 5];
+    let mut buckets = [0i64; 5];
     for r in &rows {
         let idx = if r.0 >= 5 { 4 } else { (r.0 - 1) as usize };
         buckets[idx] += r.1;

@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_session_recordings_project_session_unique;

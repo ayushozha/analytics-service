@@ -1,14 +1,13 @@
 use axum::extract::Path;
 use axum::response::IntoResponse;
 use axum::Extension;
-use rand::Rng;
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::models::module::{
-    default_project_settings, module_metadata, parse_project_settings, ModuleConfig, ModuleInfo,
-    UpdateModulesRequest, ALL_MODULES,
+    module_metadata, ModuleConfig, ModuleInfo, UpdateModulesRequest, ALL_MODULES,
 };
 use crate::models::project::{ApiKeyResponse, ApiKeyRow, CreateApiKey, CreateProject, Project};
 use crate::models::webhook::{CreateWebhook, UpdateWebhook, Webhook};
@@ -16,8 +15,8 @@ use crate::services;
 use crate::state::SharedState;
 
 fn generate_api_key(prefix: &str) -> String {
-    let mut rng = rand::thread_rng();
-    let random_bytes: Vec<u8> = (0..24).map(|_| rng.gen()).collect();
+    let mut rng = rand::rng();
+    let random_bytes: Vec<u8> = (0..24).map(|_| rng.random()).collect();
     let encoded = base64::Engine::encode(
         &base64::engine::general_purpose::URL_SAFE_NO_PAD,
         &random_bytes,
@@ -138,11 +137,12 @@ pub async fn revoke_api_key(
     Extension(state): Extension<SharedState>,
     Path((project_id, key_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    let result = sqlx::query("UPDATE api_keys SET is_active = false WHERE id = $1 AND project_id = $2")
-        .bind(key_id)
-        .bind(project_id)
-        .execute(&state.db)
-        .await?;
+    let result =
+        sqlx::query("UPDATE api_keys SET is_active = false WHERE id = $1 AND project_id = $2")
+            .bind(key_id)
+            .bind(project_id)
+            .execute(&state.db)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("API key not found".to_string()));
@@ -236,12 +236,11 @@ pub async fn delete_webhook(
     Extension(state): Extension<SharedState>,
     Path((project_id, webhook_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    let result =
-        sqlx::query("DELETE FROM webhooks WHERE id = $1 AND project_id = $2")
-            .bind(webhook_id)
-            .bind(project_id)
-            .execute(&state.db)
-            .await?;
+    let result = sqlx::query("DELETE FROM webhooks WHERE id = $1 AND project_id = $2")
+        .bind(webhook_id)
+        .bind(project_id)
+        .execute(&state.db)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Webhook not found".to_string()));
@@ -281,7 +280,7 @@ pub async fn test_webhook(
         .timeout(std::time::Duration::from_secs(5));
 
     if let Some(secret) = &webhook.secret {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("valid key");
@@ -316,11 +315,7 @@ pub async fn list_modules(
     let modules: Vec<ModuleInfo> = ALL_MODULES
         .iter()
         .map(|&name| {
-            let config = settings
-                .modules
-                .get(name)
-                .cloned()
-                .unwrap_or_default();
+            let config = settings.modules.get(name).cloned().unwrap_or_default();
             let (description, category) = module_metadata(name);
             ModuleInfo {
                 name: name.to_string(),
@@ -367,8 +362,8 @@ pub async fn update_modules(
         c.enabled = true;
     });
 
-    let settings_json = serde_json::to_value(&settings)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let settings_json =
+        serde_json::to_value(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Persist
     sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
@@ -398,15 +393,19 @@ pub async fn enable_module(
     }
 
     let mut settings = services::modules::get_project_settings(&state, project_id).await?;
-    settings.modules.entry(module_name.clone()).and_modify(|c| {
-        c.enabled = true;
-    }).or_insert(ModuleConfig {
-        enabled: true,
-        access: crate::models::module::ModuleAccess::All,
-    });
+    settings
+        .modules
+        .entry(module_name.clone())
+        .and_modify(|c| {
+            c.enabled = true;
+        })
+        .or_insert(ModuleConfig {
+            enabled: true,
+            access: crate::models::module::ModuleAccess::All,
+        });
 
-    let settings_json = serde_json::to_value(&settings)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let settings_json =
+        serde_json::to_value(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
 
     sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
         .bind(&settings_json)
@@ -445,8 +444,8 @@ pub async fn disable_module(
         c.enabled = false;
     });
 
-    let settings_json = serde_json::to_value(&settings)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let settings_json =
+        serde_json::to_value(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
 
     sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
         .bind(&settings_json)
@@ -485,8 +484,8 @@ pub async fn update_module_access(
         c.access = input.access.clone();
     });
 
-    let settings_json = serde_json::to_value(&settings)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let settings_json =
+        serde_json::to_value(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
 
     sqlx::query("UPDATE projects SET settings = $1, updated_at = NOW() WHERE id = $2")
         .bind(&settings_json)

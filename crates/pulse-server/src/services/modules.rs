@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::models::module::{
-    check_api_key_module_access, check_module_access, parse_project_settings, ModuleError,
-    ProjectSettings,
+    canonical_module_name, check_api_key_module_access, check_module_access,
+    parse_project_settings, ModuleError, ProjectSettings,
 };
 use crate::state::SharedState;
 
@@ -103,6 +103,7 @@ pub async fn is_module_enabled(
     module: &str,
 ) -> AppResult<bool> {
     let settings = get_project_settings(state, project_id).await?;
+    let module = canonical_module_name(module);
     Ok(settings
         .modules
         .get(module)
@@ -122,9 +123,6 @@ fn map_module_error(result: Result<(), ModuleError>) -> AppResult<()> {
         } => AppError::Forbidden(format!(
             "Module '{module}' requires '{required}' access, currently '{current}'"
         )),
-        ModuleError::ApiKeyRestricted(m) => {
-            AppError::Forbidden(format!("API key restricted from module '{m}'"))
-        }
         ModuleError::UnknownModule(m) => AppError::BadRequest(format!("Unknown module: {m}")),
     })
 }

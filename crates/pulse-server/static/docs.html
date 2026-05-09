@@ -292,27 +292,42 @@ pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
 
   <div class="sidebar-section">Core Analytics</div>
   <a href="#core-analytics">Core Analytics API</a>
+  <a href="#identity">Identity</a>
   <a href="#utm">UTM / Campaigns</a>
+  <a href="#marketing">Marketing Analytics</a>
 
   <div class="sidebar-section">Advanced Features</div>
+  <a href="#segments">Segments</a>
   <a href="#funnels">Funnels</a>
   <a href="#goals">Goals / Conversions</a>
   <a href="#retention">Retention</a>
   <a href="#cohorts">Cohorts</a>
   <a href="#paths">Path Analysis</a>
+  <a href="#dashboards-reports">Dashboards / Reports</a>
+  <a href="#product-insights">Product Insights</a>
+  <a href="#bi-layer">BI Layer</a>
+  <a href="#ai-analytics">AI Analytics</a>
 
   <div class="sidebar-section">Performance &amp; Errors</div>
   <a href="#webvitals">Web Vitals</a>
-  <a href="#errors">Error Tracking</a>
+  <a href="#errors">Errors / Logs</a>
+  <a href="#session-replay">Session Replay</a>
   <a href="#heatmaps">Heatmaps</a>
 
   <div class="sidebar-section">Engagement</div>
+  <a href="#feature-flags">Feature Flags</a>
   <a href="#ab-testing">A/B Testing</a>
   <a href="#surveys">Surveys</a>
 
   <div class="sidebar-section">Platform</div>
   <a href="#exports">CSV Exports</a>
+  <a href="#integrations">Integrations</a>
+  <a href="#sources">Sources</a>
+  <a href="#destinations">Destinations</a>
   <a href="#sharing">Shared Dashboards</a>
+  <a href="#governance">Governance</a>
+  <a href="#privacy">Privacy / Audit</a>
+  <a href="#email-reports">Email Reports</a>
   <a href="#alerts">Alerts</a>
   <a href="#admin">Admin API</a>
   <a href="#webhooks">Webhooks</a>
@@ -337,6 +352,20 @@ pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
   <pre><code>https://pulse.ayushojha.com</code></pre>
 </div>
 <p>All API endpoints are relative to this base URL. The API accepts and returns JSON unless otherwise noted (e.g., CSV exports).</p>
+
+<h3>Production Runtime</h3>
+<p>The reference deployment uses the current stable Rust and Node toolchains, PostgreSQL 18, Redis 8, and Debian Trixie runtime images. Configure these environment variables before running the server:</p>
+<table>
+  <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>DATABASE_URL</code></td><td>PostgreSQL connection string used by migrations, ingestion, and query APIs.</td></tr>
+    <tr><td><code>REDIS_URL</code></td><td>Redis connection string for buffering, rate limits, and background work.</td></tr>
+    <tr><td><code>PULSE_ADMIN_TOKEN</code></td><td>Bearer token for project, key, module, and webhook administration.</td></tr>
+    <tr><td><code>PULSE_COOKIE_SECRET</code></td><td>Secret used to sign dashboard cookies. Set explicitly in production.</td></tr>
+    <tr><td><code>EMAIL_REPORT_WEBHOOK_URL</code></td><td>Optional delivery endpoint for scheduled email report payloads.</td></tr>
+    <tr><td><code>ALLOWED_ORIGINS</code></td><td>Comma-separated list of browser origins allowed to call the API.</td></tr>
+  </tbody>
+</table>
 
 <h3>Quick Start</h3>
 <div class="steps">
@@ -422,49 +451,59 @@ pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
 <p>Pulse features a configurable module system that lets you enable or disable feature sets per project. Each module controls access to related API endpoints and data collection. Modules have access levels: <code>read</code>, <code>write</code>, or <code>all</code> (both).</p>
 
 <h3>Available Modules</h3>
-<p>Pulse ships with 23 modules across five categories:</p>
+<p>Pulse ships with 33 modules across five categories:</p>
 
 <h4>Core</h4>
 <div class="module-grid">
-  <div class="module-card"><div class="module-cat">Core</div><h5>pageviews</h5><p>Page view tracking and top pages reporting</p></div>
-  <div class="module-card"><div class="module-cat">Core</div><h5>events</h5><p>Custom event tracking with metadata</p></div>
-  <div class="module-card"><div class="module-cat">Core</div><h5>sessions</h5><p>Session detection and duration metrics</p></div>
-  <div class="module-card"><div class="module-cat">Core</div><h5>referrers</h5><p>Referrer / traffic source analysis</p></div>
-  <div class="module-card"><div class="module-cat">Core</div><h5>devices</h5><p>Browser, OS, and device type breakdown</p></div>
-  <div class="module-card"><div class="module-cat">Core</div><h5>geo</h5><p>Country-level geographic distribution</p></div>
-  <div class="module-card"><div class="module-cat">Core</div><h5>realtime</h5><p>Active visitors in the last 5 minutes</p></div>
+  <div class="module-card"><div class="module-cat">Core</div><h5>core</h5><p>Core analytics: pageviews, sessions, events, devices, geo, referrers, realtime</p></div>
+  <div class="module-card"><div class="module-cat">Core</div><h5>identity</h5><p>User profiles, IDs, aliases, traits, accounts, and SCIM provisioning</p></div>
 </div>
 
-<h4>Engagement</h4>
+<h4>Analysis</h4>
 <div class="module-grid">
-  <div class="module-card"><div class="module-cat">Engagement</div><h5>utm</h5><p>UTM campaign parameter tracking</p></div>
-  <div class="module-card"><div class="module-cat">Engagement</div><h5>funnels</h5><p>Multi-step conversion funnels</p></div>
-  <div class="module-card"><div class="module-cat">Engagement</div><h5>goals</h5><p>Goal and conversion tracking</p></div>
-  <div class="module-card"><div class="module-cat">Engagement</div><h5>retention</h5><p>User retention cohort analysis</p></div>
-  <div class="module-card"><div class="module-cat">Engagement</div><h5>cohorts</h5><p>Grouped cohort metric comparison</p></div>
-  <div class="module-card"><div class="module-cat">Engagement</div><h5>paths</h5><p>User navigation path analysis</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>segments</h5><p>Saved behavioral and identity-based visitor segments</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>dashboards</h5><p>Custom dashboards, saved reports, query explorer, and product insights</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>funnels</h5><p>Multi-step conversion funnels</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>goals</h5><p>Goal and conversion tracking</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>retention</h5><p>User retention cohort analysis</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>cohorts</h5><p>Grouped cohort metric comparison</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>paths</h5><p>User navigation path analysis</p></div>
+  <div class="module-card"><div class="module-cat">Analysis</div><h5>bi</h5><p>Safe SQL, embeds, external connections, semantic metrics, visual queries, and CSV uploads</p></div>
 </div>
 
-<h4>Performance</h4>
+<h4>Tracking</h4>
 <div class="module-grid">
-  <div class="module-card"><div class="module-cat">Performance</div><h5>webvitals</h5><p>Core Web Vitals (LCP, FCP, CLS, INP, TTFB)</p></div>
-  <div class="module-card"><div class="module-cat">Performance</div><h5>error_tracking</h5><p>JavaScript error capture and grouping</p></div>
-  <div class="module-card"><div class="module-cat">Performance</div><h5>heatmaps</h5><p>Click heatmap data collection</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>utm</h5><p>UTM campaign parameter tracking</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>webvitals</h5><p>Core Web Vitals (LCP, FCP, CLS, INP, TTFB)</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>scroll</h5><p>Scroll depth measurement per page</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>revenue</h5><p>Revenue and ecommerce event tracking</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>search</h5><p>Internal site search query tracking</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>outlinks</h5><p>External link clicks and file download tracking</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>error_tracking</h5><p>JavaScript error capture and grouping</p></div>
+  <div class="module-card"><div class="module-cat">Tracking</div><h5>logs</h5><p>Application log ingestion with release filtering</p></div>
 </div>
 
-<h4>Experimentation</h4>
+<h4>Experience &amp; Experimentation</h4>
 <div class="module-grid">
+  <div class="module-card"><div class="module-cat">Experimentation</div><h5>feature_flags</h5><p>Feature flags, remote config, targeting rules, and rollout evaluation</p></div>
   <div class="module-card"><div class="module-cat">Experimentation</div><h5>ab_testing</h5><p>A/B experiment management and results</p></div>
+  <div class="module-card"><div class="module-cat">Experience</div><h5>session_replay</h5><p>Privacy-masked session recording and playback</p></div>
+  <div class="module-card"><div class="module-cat">Experience</div><h5>heatmaps</h5><p>Click heatmap data collection</p></div>
   <div class="module-card"><div class="module-cat">Experimentation</div><h5>surveys</h5><p>In-app survey builder and response collection</p></div>
-  <div class="module-card"><div class="module-cat">Experimentation</div><h5>search</h5><p>Internal site search query tracking</p></div>
+  <div class="module-card"><div class="module-cat">Advanced</div><h5>ai_queries</h5><p>Natural-language analytics answers, generated insights, and query history</p></div>
+  <div class="module-card"><div class="module-cat">Advanced</div><h5>predictions</h5><p>Predictive analytics and churn probability</p></div>
 </div>
 
 <h4>Platform</h4>
 <div class="module-grid">
   <div class="module-card"><div class="module-cat">Platform</div><h5>exports</h5><p>CSV data export for all report types</p></div>
+  <div class="module-card"><div class="module-cat">Platform</div><h5>integrations</h5><p>Integrations marketplace catalog for sources, destinations, SDKs, and imports</p></div>
+  <div class="module-card"><div class="module-cat">Platform</div><h5>sources</h5><p>Source catalog, webhook collection, ingestion audit, and source tokens</p></div>
+  <div class="module-card"><div class="module-cat">Platform</div><h5>destinations</h5><p>Destination catalog, event routing, retries, and dead letters</p></div>
   <div class="module-card"><div class="module-cat">Platform</div><h5>sharing</h5><p>Password-protected shared dashboards</p></div>
+  <div class="module-card"><div class="module-cat">Platform</div><h5>governance</h5><p>Tracking plans, event schemas, data dictionary, and quality monitoring</p></div>
+  <div class="module-card"><div class="module-cat">Platform</div><h5>email_reports</h5><p>Scheduled analytics digests via delivery webhook</p></div>
   <div class="module-card"><div class="module-cat">Platform</div><h5>alerts</h5><p>Threshold-based alert rules and notifications</p></div>
-  <div class="module-card"><div class="module-cat">Platform</div><h5>scroll_depth</h5><p>Scroll depth measurement per page</p></div>
 </div>
 
 <h3>Module Admin Endpoints</h3>
@@ -590,9 +629,16 @@ pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
   data-outlinks=<span class="string">"true"</span>
   data-errors=<span class="string">"true"</span>
   data-clicks=<span class="string">"true"</span>
+  data-replay=<span class="string">"true"</span>
+  data-replay-sample=<span class="string">"0.25"</span>
+  data-replay-mask=<span class="string">"true"</span>
   data-search=<span class="string">"true"</span>
   data-search-param=<span class="string">"q"</span>
-  data-dnt=<span class="string">"false"</span>&gt;&lt;/script&gt;</code></pre>
+  data-consent-mode=<span class="string">"analytics"</span>
+  data-consent-granted=<span class="string">"true"</span>
+  data-release=<span class="string">"2026.05.09"</span>
+  data-environment=<span class="string">"production"</span>
+  data-dnt=<span class="string">"true"</span>&gt;&lt;/script&gt;</code></pre>
 </div>
 
 <h3>Data Attributes</h3>
@@ -607,9 +653,16 @@ pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
     <tr><td><code>data-outlinks</code></td><td><code>false</code></td><td>Track clicks on outbound links.</td></tr>
     <tr><td><code>data-errors</code></td><td><code>false</code></td><td>Capture unhandled JavaScript errors.</td></tr>
     <tr><td><code>data-clicks</code></td><td><code>false</code></td><td>Record click coordinates for heatmaps.</td></tr>
+    <tr><td><code>data-replay</code></td><td><code>false</code></td><td>Record privacy-masked session replay events.</td></tr>
+    <tr><td><code>data-replay-sample</code></td><td><code>1</code></td><td>Replay sampling rate from <code>0</code> to <code>1</code>.</td></tr>
+    <tr><td><code>data-replay-mask</code></td><td><code>true</code></td><td>Mask form input values in replay events.</td></tr>
     <tr><td><code>data-search</code></td><td><code>false</code></td><td>Track internal site search queries.</td></tr>
     <tr><td><code>data-search-param</code></td><td><code>q</code></td><td>URL query parameter name for search queries.</td></tr>
-    <tr><td><code>data-dnt</code></td><td><code>false</code></td><td>Respect browser Do Not Track setting.</td></tr>
+    <tr><td><code>data-consent-mode</code></td><td><code>analytics</code></td><td>Consent mode sent with collection requests.</td></tr>
+    <tr><td><code>data-consent-granted</code></td><td><code>true</code></td><td>Set to <code>false</code> until a visitor grants consent when consent is required.</td></tr>
+    <tr><td><code>data-release</code></td><td>&mdash;</td><td>Release/version tag attached to captured errors and logs.</td></tr>
+    <tr><td><code>data-environment</code></td><td><code>production</code></td><td>Environment tag attached to captured errors and logs.</td></tr>
+    <tr><td><code>data-dnt</code></td><td><code>true</code></td><td>Respect browser Do Not Track setting.</td></tr>
   </tbody>
 </table>
 
@@ -653,6 +706,20 @@ pulse(<span class="string">"search"</span>, {
 </details>
 
 <details>
+  <summary>Application Log Submission</summary>
+  <div class="details-content">
+    <div class="code-wrap">
+      <div class="code-label"><span>JavaScript</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="comment">// Submit an application log with release metadata from the script config</span>
+pulse(<span class="string">"log"</span>, <span class="string">"warn"</span>, <span class="string">"Checkout retry"</span>, {
+  order_id: <span class="string">"ord_123"</span>,
+  retry_count: <span class="number">2</span>
+});</code></pre>
+    </div>
+  </div>
+</details>
+
+<details>
   <summary>Survey Response Submission</summary>
   <div class="details-content">
     <div class="code-wrap">
@@ -676,29 +743,25 @@ pulse(<span class="string">"survey_response"</span>, {
   <div class="details-content">
     <div class="code-wrap">
       <div class="code-label"><span>Install</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-      <pre><code>npm install @pulse-analytics/sdk</code></pre>
+      <pre><code>npm install @ayushojha/pulse-analytics</code></pre>
     </div>
     <div class="code-wrap">
       <div class="code-label"><span>TypeScript</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-      <pre><code><span class="key">import</span> { PulseClient } <span class="key">from</span> <span class="string">'@pulse-analytics/sdk'</span>;
+      <pre><code><span class="key">import</span> { PulseClient } <span class="key">from</span> <span class="string">'@ayushojha/pulse-analytics'</span>;
 
 <span class="key">const</span> pulse = <span class="key">new</span> PulseClient({
   apiKey: <span class="string">'pa_live_YOUR_INGEST_KEY'</span>,
   apiUrl: <span class="string">'https://pulse.ayushojha.com'</span>,
-  utm: <span class="bool">true</span>,
-  vitals: <span class="bool">true</span>,
-  scrollDepth: <span class="bool">true</span>
+  trackUtm: <span class="bool">true</span>,
+  trackWebVitals: <span class="bool">true</span>,
+  trackScrollDepth: <span class="bool">true</span>
 });
-
-pulse.init();
 
 <span class="comment">// Track custom events</span>
 pulse.event(<span class="string">'signup_complete'</span>, { method: <span class="string">'google'</span> });
 
 <span class="comment">// Track revenue</span>
-pulse.event(<span class="string">'purchase'</span>, {
-  revenue: { amount: <span class="number">29.99</span>, currency: <span class="string">'USD'</span> }
-});</code></pre>
+pulse.event(<span class="string">'purchase'</span>, { plan: <span class="string">'pro'</span> }, <span class="number">29.99</span>, <span class="string">'USD'</span>);</code></pre>
     </div>
   </div>
 </details>
@@ -708,19 +771,92 @@ pulse.event(<span class="string">'purchase'</span>, {
   <div class="details-content">
     <div class="code-wrap">
       <div class="code-label"><span>TypeScript</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-      <pre><code><span class="key">import</span> { PulseServer } <span class="key">from</span> <span class="string">'@pulse-analytics/sdk/server'</span>;
+      <pre><code><span class="key">import</span> { PulseServerClient } <span class="key">from</span> <span class="string">'@ayushojha/pulse-analytics/server'</span>;
 
-<span class="key">const</span> pulse = <span class="key">new</span> PulseServer({
+<span class="key">const</span> pulse = <span class="key">new</span> PulseServerClient({
   apiKey: <span class="string">'pa_live_YOUR_INGEST_KEY'</span>,
   apiUrl: <span class="string">'https://pulse.ayushojha.com'</span>
 });
 
 <span class="comment">// Server-side event</span>
-<span class="key">await</span> pulse.collect({
-  type: <span class="string">'event'</span>,
-  name: <span class="string">'subscription_renewed'</span>,
+<span class="key">await</span> pulse.trackEvent({
+  visitorId: <span class="string">'visitor_123'</span>,
+  eventName: <span class="string">'subscription_renewed'</span>,
   data: { plan: <span class="string">'enterprise'</span>, mrr: <span class="number">499</span> }
 });</code></pre>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>React / Vue / Next.js helpers</summary>
+  <div class="details-content">
+    <div class="code-wrap">
+      <div class="code-label"><span>React</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="key">import</span> { PulseProvider, usePulsePageview } <span class="key">from</span> <span class="string">'@ayushojha/pulse-analytics/react'</span>;
+
+<span class="key">function</span> App({ children }) {
+  <span class="key">return</span> (
+    &lt;PulseProvider config={{ apiKey: <span class="string">'pa_live_YOUR_INGEST_KEY'</span>, apiUrl: <span class="string">'https://pulse.ayushojha.com'</span> }}&gt;
+      {children}
+    &lt;/PulseProvider&gt;
+  );
+}
+
+<span class="key">function</span> Page() {
+  usePulsePageview();
+}</code></pre>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Vue</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="key">import</span> { createApp } <span class="key">from</span> <span class="string">'vue'</span>;
+<span class="key">import</span> { createPulseVue, usePulsePageview } <span class="key">from</span> <span class="string">'@ayushojha/pulse-analytics/vue'</span>;
+
+<span class="key">const</span> app = createApp(App);
+app.use(createPulseVue({
+  config: { apiKey: <span class="string">'pa_live_YOUR_INGEST_KEY'</span>, apiUrl: <span class="string">'https://pulse.ayushojha.com'</span> }
+}));
+
+<span class="key">export default</span> {
+  setup() {
+    usePulsePageview();
+  }
+};</code></pre>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Next.js Script</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="key">import</span> Script <span class="key">from</span> <span class="string">'next/script'</span>;
+<span class="key">import</span> { getPulseScriptProps } <span class="key">from</span> <span class="string">'@ayushojha/pulse-analytics/next'</span>;
+
+&lt;Script
+  {...getPulseScriptProps({
+    apiKey: <span class="string">'pa_live_YOUR_INGEST_KEY'</span>,
+    apiUrl: <span class="string">'https://pulse.ayushojha.com'</span>,
+    trackWebVitals: <span class="bool">true</span>,
+    strategy: <span class="string">'afterInteractive'</span>
+  })}
+/&gt;</code></pre>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>React Native mobile SDK</summary>
+  <div class="details-content">
+    <div class="code-wrap">
+      <div class="code-label"><span>React Native</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="key">import</span> { createPulseNative } <span class="key">from</span> <span class="string">'@ayushojha/pulse-analytics/react-native'</span>;
+
+<span class="key">const</span> pulse = createPulseNative({
+  apiKey: <span class="string">'pa_live_YOUR_INGEST_KEY'</span>,
+  apiUrl: <span class="string">'https://pulse.ayushojha.com'</span>,
+  visitorId: <span class="string">'device_or_user_scoped_id'</span>,
+  environment: <span class="string">'production'</span>
+});
+
+<span class="key">await</span> pulse.screen(<span class="string">'Home'</span>);
+<span class="key">await</span> pulse.event(<span class="string">'purchase'</span>, { plan: <span class="string">'pro'</span> }, <span class="number">29.99</span>, <span class="string">'USD'</span>);
+<span class="key">await</span> pulse.identify(<span class="string">'user_123'</span>, { plan: <span class="string">'pro'</span> });</code></pre>
     </div>
   </div>
 </details>
@@ -810,7 +946,7 @@ pulse.event(<span class="string">'purchase'</span>, {
 <details>
   <summary><span class="badge badge-post">POST</span>&nbsp; identify</summary>
   <div class="details-content">
-    <p>Associate traits with the current visitor for segmentation.</p>
+    <p>Persist a user profile for the current visitor. Include <code>user_id</code> when the visitor is known; anonymous trait-only identifies are also stored.</p>
     <div class="code-wrap">
       <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code><span class="cmd">curl</span> -X POST https://pulse.ayushojha.com/api/collect \
@@ -818,11 +954,15 @@ pulse.event(<span class="string">'purchase'</span>, {
   -H <span class="string">"Content-Type: application/json"</span> \
   -d <span class="string">'{
     "type": "identify",
-    "traits": {
-      "plan": "pro",
-      "company": "Acme Corp",
-      "role": "admin",
-      "signed_up": "2025-08-14"
+    "visitor_id": "v_7fz9k2",
+    "payload": {
+      "user_id": "user_123",
+      "traits": {
+        "plan": "pro",
+        "company": "Acme Corp",
+        "role": "admin",
+        "signed_up": "2025-08-14"
+      }
     }
   }'</span></code></pre>
     </div>
@@ -916,12 +1056,42 @@ pulse.event(<span class="string">'purchase'</span>, {
   -H <span class="string">"Content-Type: application/json"</span> \
   -d <span class="string">'{
     "type": "js_error",
-    "message": "TypeError: Cannot read properties of null (reading '\''id'\'')",
-    "stack": "TypeError: Cannot read properties of null\n    at handleClick (app.js:142:18)\n    at onClick (react-dom.js:3905:14)",
-    "filename": "https://acme.com/assets/app.js",
-    "lineno": 142,
-    "colno": 18,
-    "path": "/dashboard"
+    "visitor_id": "v_7fz9k2",
+    "payload": {
+      "message": "TypeError: Cannot read properties of null (reading '\''id'\'')",
+      "stack": "TypeError: Cannot read properties of null\n    at handleClick (app.js:142:18)\n    at onClick (react-dom.js:3905:14)",
+      "filename": "https://acme.com/assets/app.js",
+      "lineno": 142,
+      "colno": 18,
+      "path": "/dashboard",
+      "release": "2026.05.09",
+      "environment": "production"
+    }
+  }'</span></code></pre>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary><span class="badge badge-post">POST</span>&nbsp; log</summary>
+  <div class="details-content">
+    <p>Submit an application log entry for release-aware troubleshooting.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="cmd">curl</span> -X POST https://pulse.ayushojha.com/api/collect \
+  -H <span class="string">"X-Pulse-Key: pa_live_8B57VGhehP5C2R8rnP535YYs"</span> \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{
+    "type": "log",
+    "visitor_id": "v_7fz9k2",
+    "payload": {
+      "level": "warn",
+      "message": "Checkout retry",
+      "body": { "order_id": "ord_123", "retry_count": 2 },
+      "path": "/checkout",
+      "release": "2026.05.09",
+      "environment": "production"
+    }
   }'</span></code></pre>
     </div>
   </div>
@@ -960,14 +1130,17 @@ pulse.event(<span class="string">'purchase'</span>, {
   -H <span class="string">"Content-Type: application/json"</span> \
   -d <span class="string">'{
     "type": "survey_response",
-    "survey_id": "c7f3e8a2-91b4-4d6e-b2f1-8a3c9d4e5f6a",
-    "answers": [
-      {"question_id": "q1", "value": "Very satisfied"},
-      {"question_id": "q2", "value": 9},
-      {"question_id": "q3", "value": "Love the real-time dashboard!"}
-    ],
-    "completed": true,
-    "path": "/app/settings"
+    "visitor_id": "v_7fz9k2",
+    "payload": {
+      "survey_id": "c7f3e8a2-91b4-4d6e-b2f1-8a3c9d4e5f6a",
+      "answers": [
+        {"question_id": "q1", "value": "Very satisfied"},
+        {"question_id": "q2", "value": 9},
+        {"question_id": "q3", "value": "Love the real-time dashboard!"}
+      ],
+      "completed": true,
+      "path": "/app/settings"
+    }
   }'</span></code></pre>
     </div>
   </div>
@@ -1205,6 +1378,187 @@ pulse.event(<span class="string">'purchase'</span>, {
 </section>
 
 <!-- ============================================================ -->
+<!-- IDENTITY -->
+<!-- ============================================================ -->
+<section id="identity">
+<h2>Identity</h2>
+<p>Requires the <code>identity</code> module. Identify calls create or update visitor profiles, merge traits, record aliases when a stable <code>user_id</code> is provided, and can attach visitors to account or company records with account-level analytics. Local SCIM provisioning APIs can create users and groups without depending on a live external identity provider.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/users</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List stored user profiles. Supports <code>limit</code> and <code>offset</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"data"</span>: [
+    {
+      <span class="key">"visitor_id"</span>: <span class="string">"v_7fz9k2"</span>,
+      <span class="key">"user_id"</span>: <span class="string">"user_123"</span>,
+      <span class="key">"traits"</span>: { <span class="key">"plan"</span>: <span class="string">"pro"</span> },
+      <span class="key">"last_seen_at"</span>: <span class="string">"2026-05-09T18:22:14Z"</span>
+    }
+  ]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/users/{visitor_id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one visitor profile and its merged traits.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/aliases/{user_id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List visitor IDs aliased to a known user ID.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/graph</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return visitor, user, and account nodes plus alias, identify, and membership edges. Provide one or more of <code>visitor_id</code>, <code>user_id</code>, or <code>account_id</code>; optional <code>limit</code> caps graph expansion.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/accounts</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List account or company profiles captured from identify calls. Supports <code>limit</code> and <code>offset</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/accounts/{account_id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one account profile with merged account traits.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/accounts/{account_id}/members</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List visitors and user IDs associated with an account, including role and last-seen timestamps.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/identity/accounts/{account_id}/analytics</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return account-level members, identified users, sessions, pageviews, events, and revenue for a date range.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/scim/users</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List locally provisioned SCIM users. Supports <code>limit</code> and <code>offset</code>. Provisioned users are also synced into identity profiles with visitor IDs like <code>scim:{id}</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/scim/users</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a provisioned user with normalized profile fields, email array, active state, and arbitrary traits.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"user_name"</span>: <span class="string">"alice@example.com"</span>,
+  <span class="key">"external_id"</span>: <span class="string">"idp_123"</span>,
+  <span class="key">"active"</span>: <span class="literal">true</span>,
+  <span class="key">"display_name"</span>: <span class="string">"Alice Example"</span>,
+  <span class="key">"emails"</span>: [{ <span class="key">"value"</span>: <span class="string">"alice@example.com"</span>, <span class="key">"primary"</span>: <span class="literal">true</span> }],
+  <span class="key">"traits"</span>: { <span class="key">"department"</span>: <span class="string">"Engineering"</span> }
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="badge badge-put">PUT</span>
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/scim/users/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch, update, or delete one provisioned user. Updates refresh the synced identity profile.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/scim/groups</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List locally provisioned groups. Supports <code>limit</code> and <code>offset</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/scim/groups</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a provisioned group and replace its member list with existing SCIM user IDs.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"display_name"</span>: <span class="string">"Engineering"</span>,
+  <span class="key">"external_id"</span>: <span class="string">"group_eng"</span>,
+  <span class="key">"traits"</span>: { <span class="key">"cost_center"</span>: <span class="string">"eng"</span> },
+  <span class="key">"members"</span>: [<span class="string">"6d0aa190-5b2a-4b0e-9c8d-df7608e7aa8f"</span>]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="badge badge-put">PUT</span>
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/scim/groups/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one provisioned group with expanded members, replace its group details and membership, or delete it.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
 <!-- UTM / CAMPAIGNS -->
 <!-- ============================================================ -->
 <section id="utm">
@@ -1314,6 +1668,265 @@ pulse.event(<span class="string">'purchase'</span>, {
     { <span class="key">"date"</span>: <span class="string">"2026-03-20"</span>, <span class="key">"visitors"</span>: <span class="number">78</span>, <span class="key">"pageviews"</span>: <span class="number">198</span> },
     { <span class="key">"date"</span>: <span class="string">"2026-03-21"</span>, <span class="key">"visitors"</span>: <span class="number">95</span>, <span class="key">"pageviews"</span>: <span class="number">256</span> },
     { <span class="key">"date"</span>: <span class="string">"2026-03-22"</span>, <span class="key">"visitors"</span>: <span class="number">67</span>, <span class="key">"pageviews"</span>: <span class="number">178</span> }
+  ]
+}</code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- MARKETING ANALYTICS -->
+<!-- ============================================================ -->
+<section id="marketing">
+<h2>Marketing Analytics</h2>
+<p>Requires the <code>utm</code> module. Marketing analytics adds channel grouping, attribution models, ecommerce revenue reports, AI referrer detection, and vendor-export imports for Google Analytics, Google Ads, and Search Console style data.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/channels</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Group traffic into Direct, Organic Search, Paid Search, Organic Social, Paid Social, Email, Display, Affiliate, AI Referrals, Referral, Paid Other, and Other. Supports <code>start_at</code> and <code>end_at</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/attribution</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Attribute revenue events by channel, source, and campaign. Supports <code>model</code> values <code>first_touch</code>, <code>last_touch</code>, and <code>linear</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/ecommerce</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return total orders, revenue, average order value, currency breakdown, and top revenue products from events with <code>revenue_amount</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/ai-referrers</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Detect traffic from ChatGPT/OpenAI, Perplexity, Claude/Anthropic, Gemini, and Copilot referrers.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/imports</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List imported marketing export batches. Optional <code>provider</code> filters support <code>google_analytics</code>, <code>google_ads</code>, and <code>search_console</code>; pagination uses <code>limit</code> and <code>offset</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/marketing/imports</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Import rows from GA4, Google Ads, or Search Console exports without requiring live Google OAuth. Each row stores a date, dimension object, numeric metrics, and the original raw row for auditability.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "provider": "google_ads",
+  "name": "May brand campaigns",
+  "rows": [
+    {
+      "date": "2026-05-01",
+      "dimensions": { "campaign": "brand", "source": "google" },
+      "metrics": { "impressions": 12000, "clicks": 420, "cost": 318.44, "conversions": 31 },
+      "raw_row": { "Campaign": "brand", "Clicks": "420" }
+    }
+  ],
+  "metadata": { "source": "csv_export" }
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/imports/{id}/rows</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Page through imported rows for one batch. Use <code>DELETE /api/v1/marketing/imports/{id}</code> to remove a batch and all rows.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/marketing/imports/summary</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Summarize imported rows by date range and optional provider, returning rows, impressions, clicks, cost, conversions, revenue, sessions, and users.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SEGMENTS -->
+<!-- ============================================================ -->
+<section id="segments">
+<h2>Segments</h2>
+<p>Requires the <code>segments</code> module. Save reusable visitor definitions from identity traits, session properties, pageviews, events, and behavioral metrics, then evaluate, compare, and break them down by key properties.</p>
+
+<h3>Segment Definition</h3>
+<p>A segment definition has a <code>match</code> mode of <code>all</code> or <code>any</code>, plus a list of conditions. Supported sources are <code>profile</code>, <code>session</code>, <code>pageview</code>, <code>event</code>, and <code>metric</code>. Supported operators are <code>exists</code>, <code>not_exists</code>, <code>eq</code>, <code>neq</code>, <code>contains</code>, <code>starts_with</code>, <code>ends_with</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>, and <code>in</code>.</p>
+
+<div class="code-wrap">
+  <div class="code-label"><span>Definition Example</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre><code>{
+  <span class="key">"match"</span>: <span class="string">"all"</span>,
+  <span class="key">"conditions"</span>: [
+    {
+      <span class="key">"source"</span>: <span class="string">"profile"</span>,
+      <span class="key">"field"</span>: <span class="string">"traits.plan"</span>,
+      <span class="key">"op"</span>: <span class="string">"eq"</span>,
+      <span class="key">"value"</span>: <span class="string">"pro"</span>
+    },
+    {
+      <span class="key">"source"</span>: <span class="string">"event"</span>,
+      <span class="key">"event"</span>: <span class="string">"purchase"</span>,
+      <span class="key">"field"</span>: <span class="string">"event_data.amount"</span>,
+      <span class="key">"op"</span>: <span class="string">"gte"</span>,
+      <span class="key">"value"</span>: <span class="number">100</span>
+    }
+  ]
+}</code></pre>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/segments</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List saved segments for the project.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"data"</span>: [
+    {
+      <span class="key">"id"</span>: <span class="string">"9f3d2e74-0a2b-45b7-a1d4-3b9fc6e4f2c8"</span>,
+      <span class="key">"name"</span>: <span class="string">"High-value pro users"</span>,
+      <span class="key">"description"</span>: <span class="string">"Pro users with recent purchases over $100"</span>,
+      <span class="key">"definition"</span>: { <span class="key">"match"</span>: <span class="string">"all"</span>, <span class="key">"conditions"</span>: [] },
+      <span class="key">"is_active"</span>: <span class="bool">true</span>
+    }
+  ]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/segments</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a saved segment.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="cmd">curl</span> -X POST -H <span class="string">"X-Pulse-Key: pa_live_wYxrlD97_Oy1UpLAyi_TwPTG"</span> \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{"name":"High-value pro users","description":"Pro users with recent purchases","definition":{"match":"all","conditions":[{"source":"profile","field":"traits.plan","op":"eq","value":"pro"},{"source":"event","event":"purchase","field":"event_data.amount","op":"gte","value":100}]}}'</span> \
+  https://pulse.ayushojha.com/api/v1/segments</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/segments/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one saved segment.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/segments/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update a segment&rsquo;s name, description, definition, or active state.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/segments/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a saved segment.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/segments/{id}/evaluate</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Evaluate a segment over a date range and return matching visitor IDs. Supports <code>start_at</code>, <code>end_at</code>, <code>limit</code>, and <code>offset</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"segment_id"</span>: <span class="string">"9f3d2e74-0a2b-45b7-a1d4-3b9fc6e4f2c8"</span>,
+  <span class="key">"total_visitors"</span>: <span class="number">128</span>,
+  <span class="key">"visitors"</span>: [<span class="string">"v_7fz9k2"</span>, <span class="string">"v_h3ab11"</span>]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/segments/compare</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Compare traffic and conversion metrics across multiple saved segments. Pass comma-separated IDs via <code>segment_ids</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="cmd">curl</span> -H <span class="string">"X-Pulse-Key: pa_live_wYxrlD97_Oy1UpLAyi_TwPTG"</span> \
+  <span class="string">"https://pulse.ayushojha.com/api/v1/segments/compare?segment_ids=9f3d2e74-0a2b-45b7-a1d4-3b9fc6e4f2c8,37b29685-1f73-4b72-88db-f6c71da79081&amp;start_at=2026-04-01T00:00:00Z&amp;end_at=2026-05-01T00:00:00Z"</span></code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/segments/{id}/breakdown</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Break down a segment by <code>country</code>, <code>device</code>, <code>browser</code>, <code>os</code>, <code>path</code>, <code>event</code>, or identity traits such as <code>trait:plan</code>. Supports <code>start_at</code>, <code>end_at</code>, and <code>limit</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="cmd">curl</span> -H <span class="string">"X-Pulse-Key: pa_live_wYxrlD97_Oy1UpLAyi_TwPTG"</span> \
+  <span class="string">"https://pulse.ayushojha.com/api/v1/segments/9f3d2e74-0a2b-45b7-a1d4-3b9fc6e4f2c8/breakdown?property=trait:plan"</span></code></pre>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"data"</span>: [
+    { <span class="key">"value"</span>: <span class="string">"pro"</span>, <span class="key">"visitors"</span>: <span class="number">93</span> },
+    { <span class="key">"value"</span>: <span class="string">"business"</span>, <span class="key">"visitors"</span>: <span class="number">35</span> }
   ]
 }</code></pre>
     </div>
@@ -1752,6 +2365,654 @@ pulse.event(<span class="string">'purchase'</span>, {
 </section>
 
 <!-- ============================================================ -->
+<!-- DASHBOARDS / REPORTS -->
+<!-- ============================================================ -->
+<section id="dashboards-reports">
+<h2>Dashboards / Reports</h2>
+<p>Requires the <code>dashboards</code> module. Build custom dashboard layouts, persist report definitions, and run a safe query explorer over built-in analytics datasets. Supported report types are <code>stats</code>, <code>timeseries</code>, <code>pages</code>, <code>referrers</code>, <code>events</code>, <code>devices</code>, <code>geo</code>, and <code>campaigns</code>.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/dashboards</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List custom dashboards for the project.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/dashboards</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a dashboard layout with a validated widget array.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Growth Overview",
+  "description": "Acquisition and conversion health",
+  "layout": { "columns": 12 },
+  "widgets": [
+    { "id": "trend", "report_type": "timeseries", "x": 0, "y": 0, "w": 8, "h": 4 },
+    { "id": "sources", "report_type": "referrers", "x": 8, "y": 0, "w": 4, "h": 4 }
+  ],
+  "is_default": true
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/dashboards/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one dashboard. Use <code>PUT /api/v1/dashboards/{id}</code> to update it, or <code>DELETE /api/v1/dashboards/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/reports</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List saved report definitions.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/reports</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Save a reusable report definition for dashboards, sharing workflows, or API clients.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Top pages",
+  "report_type": "pages",
+  "params": {
+    "start_at": "2026-05-01T00:00:00Z",
+    "end_at": "2026-05-09T23:59:59Z",
+    "limit": 25
+  },
+  "visualization": "table",
+  "is_active": true
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/reports/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one saved report. Use <code>PUT /api/v1/reports/{id}</code> to update it, or <code>DELETE /api/v1/reports/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/reports/{id}/run</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Run a saved report. Optional <code>start_at</code> and <code>end_at</code> query parameters override the saved date range.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/query-explorer</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Run an ad hoc safe analytics query. The explorer does not accept raw SQL.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "report_type": "campaigns",
+  "start_at": "2026-05-01T00:00:00Z",
+  "end_at": "2026-05-09T23:59:59Z",
+  "limit": 20,
+  "offset": 0
+}</code></pre>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "run": {
+    "id": "41078344-1d28-4c3a-80f6-b460f8718d4f",
+    "report_type": "campaigns",
+    "row_count": 8,
+    "result": { "data": [] }
+  },
+  "summary": "Returned 8 campaign rows."
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/query-explorer/history</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List prior explorer runs. Supports <code>limit</code> and <code>offset</code>.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- PRODUCT INSIGHTS -->
+<!-- ============================================================ -->
+<section id="product-insights">
+<h2>Product Insights</h2>
+<p>Requires the <code>dashboards</code> module. Product insight endpoints compute lifecycle, activation, stickiness, and before/after impact metrics from existing pageview, event, session, and error data.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/product/stickiness</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return DAU, WAU, MAU, DAU/WAU, WAU/MAU, DAU/MAU, and daily active visitor periods. Supports <code>start_at</code> and <code>end_at</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/product/lifecycle</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Break active visitors into new, returning, resurrected, and dormant groups by comparing the selected range with the immediately preceding range.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/product/activation</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Measure the share of active visitors who completed all required events and page paths in a date range.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "start_at": "2026-05-01T00:00:00Z",
+  "end_at": "2026-05-09T23:59:59Z",
+  "event_names": ["signup_completed", "workspace_created"],
+  "paths": ["/onboarding/done"]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/product/impact</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Compare equal before/after windows around a launch, release, campaign, or experiment date. Supported metrics are <code>pageviews</code>, <code>visitors</code>, <code>sessions</code>, <code>events</code>, and <code>errors</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "metric": "events",
+  "event_name": "checkout_completed",
+  "split_at": "2026-05-09T00:00:00Z",
+  "window_days": 7
+}</code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- BI LAYER -->
+<!-- ============================================================ -->
+<section id="bi-layer">
+<h2>BI Layer</h2>
+<p>Requires the <code>bi</code> module. The BI layer provides governed semantic metrics, external Postgres connections, embedded analytics links, row-level policies, saved read-only SQL, query run history, a visual query builder over approved datasets, drill-through detail rows, and JSON-row CSV uploads.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/metrics</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List semantic metric definitions. Use <code>POST /api/v1/bi/metrics</code> to create one with <code>key</code>, <code>name</code>, <code>dataset</code>, and <code>expression</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/metrics/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one metric. Use <code>PUT /api/v1/bi/metrics/{id}</code> to update it, or <code>DELETE /api/v1/bi/metrics/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/connections</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List external BI database connections. Responses include a masked connection string, allowed schemas, status, last test time, and last error. Use <code>POST /api/v1/bi/connections</code> to register a Postgres connection.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/connections</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a Postgres connection for external warehouse queries. Use least-privileged read-only credentials; Pulse runs external SQL in a read-only transaction and applies the configured search path.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Warehouse",
+  "database_type": "postgres",
+  "connection_string": "postgresql://readonly:secret@warehouse.example.com/analytics",
+  "allowed_schemas": ["public", "analytics"],
+  "is_active": true
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/connections/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one external connection. Use <code>PUT /api/v1/bi/connections/{id}</code> to rotate credentials or update schemas, or <code>DELETE /api/v1/bi/connections/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/connections/{id}/test</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Open the external database, set a read-only transaction and search path, run <code>SELECT 1</code>, and persist <code>last_tested_at</code> plus any connection error.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/connections/{id}/query</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Run read-only external SQL against a registered connection. SQL must start with <code>SELECT</code> or <code>WITH</code>, cannot include comments, separators, mutating keywords, or <code>{{project_id}}</code>; each run is stored as <code>external_sql</code> history.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "sql_text": "SELECT account_id, plan, mrr FROM accounts ORDER BY mrr DESC",
+  "limit": 100
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/embeds</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List white-label BI embed definitions. Responses include resource type, origin allowlist, theme, token prefix, access count, and last access time, but never the full token.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/embeds</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create an embeddable dashboard, report, saved SQL query, visual query, or metric. The full embed token is returned once; store it securely and use the returned <code>embed_url</code> in an iframe or server-side proxy.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Partner KPI embed",
+  "resource_type": "visual_query",
+  "resource_config": {
+    "dataset": "pageviews",
+    "dimensions": ["path"],
+    "metrics": ["count"],
+    "limit": 25
+  },
+  "allowed_origins": ["https://app.example.com"],
+  "theme": { "brand": "Acme", "primary_color": "#2563eb" },
+  "expires_at": "2026-12-31T23:59:59Z"
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/embeds/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one embed. Use <code>PUT /api/v1/bi/embeds/{id}</code> to update resource settings, origin allowlists, theme, status, or expiration; use <code>DELETE /api/v1/bi/embeds/{id}</code> to revoke it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/embeds/{id}/rotate-token</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Rotate an embed token. The new full token is returned once, and the previous token immediately stops resolving.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/embed/bi/{token}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Public embed resolver. Pulse verifies the token, expiration, active status, and request origin, increments access counters, and returns the embed definition plus its resource and optional query result.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/row-policies</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List row-level permission policies. Active policies are enforced on visual queries and drill-through queries for matching datasets.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/row-policies</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a row policy using an approved dataset field and operator: <code>eq</code>, <code>neq</code>, <code>in</code>, or <code>not_in</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "US and Canada only",
+  "dataset": "pageviews",
+  "field": "country",
+  "operator": "in",
+  "values": ["US", "CA"],
+  "is_active": true
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/bi/row-policies/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Update a row policy. Use <code>DELETE /api/v1/bi/row-policies/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/sql</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Run ad hoc read-only SQL. SQL must start with <code>SELECT</code> or <code>WITH</code>, cannot include mutating keywords, and must include <code>{{project_id}}</code> so Pulse can enforce tenant scoping.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "sql_text": "SELECT path, COUNT(*) FROM pageviews WHERE project_id = {{project_id}} GROUP BY path ORDER BY 2 DESC",
+  "limit": 100
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/sql-queries</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List saved SQL queries. Use <code>POST /api/v1/bi/sql-queries</code> to save a validated query, and <code>POST /api/v1/bi/sql-queries/{id}/run</code> to execute it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/visual-query</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Run a visual query over approved datasets: <code>pageviews</code>, <code>events</code>, <code>sessions</code>, and <code>daily_stats</code>. Provide dimensions, metrics, date range, and limit.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/bi/drill-through</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return tenant-scoped detail rows behind an aggregate chart. Supports approved datasets and whitelisted filters for <code>pageviews</code>, <code>events</code>, <code>sessions</code>, <code>daily_stats</code>, and <code>csv_uploads</code>; each run is stored as <code>drill_through</code> query history.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "dataset": "events",
+  "filters": {
+    "event_name": "signup",
+    "path": ["/pricing", "/signup"]
+  },
+  "start_at": "2026-05-01T00:00:00Z",
+  "end_at": "2026-05-09T23:59:59Z",
+  "limit": 100
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/query-runs</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List SQL, saved SQL, visual, drill-through, and external SQL executions with status, row count, duration, and error details.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/csv-uploads</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List CSV uploads. Use <code>POST /api/v1/bi/csv-uploads</code> with <code>columns</code> and JSON object <code>rows</code> to store external tabular data.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/bi/csv-uploads/{id}/rows</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Page through uploaded CSV rows. Use <code>DELETE /api/v1/bi/csv-uploads/{id}</code> to remove an upload and its rows.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- AI ANALYTICS -->
+<!-- ============================================================ -->
+<section id="ai-analytics">
+<h2>AI Analytics</h2>
+<p>Requires the <code>ai_queries</code> module. Pulse includes a deterministic query assistant that maps natural-language questions to safe built-in analytics queries, stores query runs, generates heuristic insights, and tracks LLM traces, generations, evals, cost, latency, and token usage.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/ai/query</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Ask a natural-language analytics question. Supported intents include overview, top pages, referrers, events, devices, geography, traffic trend, and errors.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "question": "What changed in traffic this month?",
+  "start_at": "2026-05-01T00:00:00Z",
+  "end_at": "2026-05-09T23:59:59Z",
+  "limit": 10
+}</code></pre>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"id"</span>: <span class="string">"6e4f28b4-5e1a-4c1d-9df0-6b2e3b2587c1"</span>,
+  <span class="key">"intent"</span>: <span class="string">"overview"</span>,
+  <span class="key">"answer"</span>: <span class="string">"Pulse saw 12420 pageviews, 4021 visitors, 4580 sessions, and 932 custom events..."</span>,
+  <span class="key">"result"</span>: {
+    <span class="key">"stats"</span>: {
+      <span class="key">"pageviews"</span>: <span class="number">12420</span>,
+      <span class="key">"visitors"</span>: <span class="number">4021</span>,
+      <span class="key">"pageview_change_percent"</span>: <span class="number">18.4</span>
+    }
+  },
+  <span class="key">"insights"</span>: [
+    {
+      <span class="key">"title"</span>: <span class="string">"Traffic is concentrated"</span>,
+      <span class="key">"severity"</span>: <span class="string">"info"</span>,
+      <span class="key">"metric"</span>: <span class="string">"pages"</span>
+    }
+  ]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/ai/insights</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Generate heuristic insights for a date range, including traffic spikes/drops, elevated bounce rate, and concentrated page traffic. Supports <code>start_at</code> and <code>end_at</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/ai/history</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List stored AI query runs. Supports <code>limit</code> and <code>offset</code>.</p>
+  </div>
+</div>
+
+<h3>LLM Traces, Generations, and Evals</h3>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/ai/llm/traces</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create or update an LLM trace for an agent run, workflow, chat, or generation chain. Use <code>GET /api/v1/ai/llm/traces</code> to list recent traces.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "trace_key": "checkout-agent-2026-05-09T12:00:00Z",
+  "name": "Checkout support agent",
+  "user_id": "user_123",
+  "metadata": { "workflow": "checkout_support" },
+  "status": "started"
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/ai/llm/traces/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one stored LLM trace by id.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/ai/llm/generations</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Record one LLM generation with provider/model, token usage, latency, cost, prompt/output payloads, status, and metadata. Use <code>GET /api/v1/ai/llm/generations</code> to list recent generations.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "trace_key": "checkout-agent-2026-05-09T12:00:00Z",
+  "provider": "openai",
+  "model": "gpt-4.1-mini",
+  "operation": "chat_completion",
+  "input_tokens": 812,
+  "output_tokens": 146,
+  "latency_ms": 1180,
+  "cost_usd": 0.0042,
+  "status": "success"
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/ai/llm/evaluations</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Record an eval result for a generation or trace, including evaluator name, metric, score, label, pass/fail, and metadata. Use <code>GET /api/v1/ai/llm/evaluations</code> to list recent evals.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/ai/llm/stats</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return LLM generation volume, error count, token usage, average latency, total cost, eval count, and eval pass rate for a date range.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
 <!-- WEB VITALS -->
 <!-- ============================================================ -->
 <section id="webvitals">
@@ -1859,8 +3120,8 @@ pulse.event(<span class="string">'purchase'</span>, {
 <!-- ERROR TRACKING -->
 <!-- ============================================================ -->
 <section id="errors">
-<h2>Error Tracking</h2>
-<p>Requires the <code>error_tracking</code> module. Capture and group JavaScript errors from your frontend to identify and fix issues quickly.</p>
+<h2>Error &amp; Log Analytics</h2>
+<p>Requires the <code>error_tracking</code> and <code>logs</code> modules. Capture JavaScript errors, group them by stable fingerprint, attach releases and environments, register source-map artifacts, and query application logs.</p>
 
 <div class="endpoint">
   <div class="endpoint-header">
@@ -1868,7 +3129,7 @@ pulse.event(<span class="string">'purchase'</span>, {
     <span class="endpoint-path">/api/v1/errors</span>
   </div>
   <div class="endpoint-body">
-    <p class="endpoint-desc">Get grouped error messages ranked by occurrence count.</p>
+    <p class="endpoint-desc">Get grouped error fingerprints ranked by occurrence count. Groups include release, environment, latest path/browser, and whether a matching source-map artifact exists.</p>
     <div class="code-wrap">
       <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code><span class="cmd">curl</span> -H <span class="string">"X-Pulse-Key: pa_live_wYxrlD97_Oy1UpLAyi_TwPTG"</span> \
@@ -1879,18 +3140,15 @@ pulse.event(<span class="string">'purchase'</span>, {
       <pre><code>{
   <span class="key">"data"</span>: [
     {
+      <span class="key">"fingerprint"</span>: <span class="string">"1d5b154e8fb6d613a52bc2f6e8bf6bc5"</span>,
       <span class="key">"message"</span>: <span class="string">"TypeError: Cannot read properties of null (reading 'id')"</span>,
       <span class="key">"count"</span>: <span class="number">142</span>,
-      <span class="key">"unique_sessions"</span>: <span class="number">98</span>,
+      <span class="key">"affected_visitors"</span>: <span class="number">98</span>,
+      <span class="key">"release"</span>: <span class="string">"2026.05.09"</span>,
+      <span class="key">"environment"</span>: <span class="string">"production"</span>,
+      <span class="key">"source_map_configured"</span>: <span class="bool">true</span>,
       <span class="key">"last_seen"</span>: <span class="string">"2026-03-22T11:42:00Z"</span>,
       <span class="key">"first_seen"</span>: <span class="string">"2026-03-05T14:23:00Z"</span>
-    },
-    {
-      <span class="key">"message"</span>: <span class="string">"ReferenceError: gtag is not defined"</span>,
-      <span class="key">"count"</span>: <span class="number">67</span>,
-      <span class="key">"unique_sessions"</span>: <span class="number">54</span>,
-      <span class="key">"last_seen"</span>: <span class="string">"2026-03-21T09:15:00Z"</span>,
-      <span class="key">"first_seen"</span>: <span class="string">"2026-03-01T08:02:00Z"</span>
     }
   ]
 }</code></pre>
@@ -1904,28 +3162,33 @@ pulse.event(<span class="string">'purchase'</span>, {
     <span class="endpoint-path">/api/v1/errors/detail</span>
   </div>
   <div class="endpoint-body">
-    <p class="endpoint-desc">Get individual error instances for a specific error message.</p>
+    <p class="endpoint-desc">Get individual error instances for a specific error message or fingerprint.</p>
     <table>
       <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td><code>message</code></td><td>string</td><td><strong>Required.</strong> The error message to look up.</td></tr>
+        <tr><td><code>message</code></td><td>string</td><td>Error message to look up.</td></tr>
+        <tr><td><code>fingerprint</code></td><td>string</td><td>Error fingerprint to look up. Either <code>message</code> or <code>fingerprint</code> is required.</td></tr>
         <tr><td><code>limit</code></td><td>integer</td><td>Number of instances to return. Default: 20.</td></tr>
       </tbody>
     </table>
     <div class="code-wrap">
       <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code>{
-  <span class="key">"message"</span>: <span class="string">"TypeError: Cannot read properties of null (reading 'id')"</span>,
-  <span class="key">"instances"</span>: [
+  <span class="key">"data"</span>: [
     {
-      <span class="key">"timestamp"</span>: <span class="string">"2026-03-22T11:42:00Z"</span>,
+      <span class="key">"created_at"</span>: <span class="string">"2026-03-22T11:42:00Z"</span>,
       <span class="key">"path"</span>: <span class="string">"/dashboard"</span>,
       <span class="key">"filename"</span>: <span class="string">"https://acme.com/assets/app.js"</span>,
       <span class="key">"lineno"</span>: <span class="number">142</span>,
       <span class="key">"colno"</span>: <span class="number">18</span>,
       <span class="key">"stack"</span>: <span class="string">"TypeError: Cannot read properties of null\n    at handleClick (app.js:142:18)"</span>,
       <span class="key">"browser"</span>: <span class="string">"Chrome 122"</span>,
-      <span class="key">"os"</span>: <span class="string">"Windows 11"</span>
+      <span class="key">"os"</span>: <span class="string">"Windows 11"</span>,
+      <span class="key">"release"</span>: <span class="string">"2026.05.09"</span>,
+      <span class="key">"matched_source_map"</span>: {
+        <span class="key">"minified_url"</span>: <span class="string">"https://acme.com/assets/app.js"</span>,
+        <span class="key">"source_map_url"</span>: <span class="string">"s3://artifacts/app.js.map"</span>
+      }
     }
   ]
 }</code></pre>
@@ -1965,10 +3228,145 @@ pulse.event(<span class="string">'purchase'</span>, {
       <pre><code>{
   <span class="key">"total_errors"</span>: <span class="number">342</span>,
   <span class="key">"unique_errors"</span>: <span class="number">18</span>,
-  <span class="key">"affected_sessions"</span>: <span class="number">215</span>,
-  <span class="key">"error_rate"</span>: <span class="number">4.7</span>
+  <span class="key">"affected_visitors"</span>: <span class="number">215</span>,
+  <span class="key">"releases"</span>: [
+    { <span class="key">"release"</span>: <span class="string">"2026.05.09"</span>, <span class="key">"count"</span>: <span class="number">188</span> }
+  ]
 }</code></pre>
     </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/releases</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List application releases used for release-aware error and log filtering. Supports <code>limit</code> and <code>offset</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/releases</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create or update a release record.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "version": "2026.05.09",
+  "environment": "production",
+  "commit_sha": "9f4c2a1",
+  "deployed_at": "2026-05-09T18:00:00Z",
+  "metadata": { "service": "web" }
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/releases/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a release record. Source-map records remain available but are detached from the release row.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/source-maps</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List source-map artifact metadata. Filter by <code>release_version</code> when needed.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/source-maps</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Register a source-map artifact for a minified JavaScript URL and release. Error detail responses surface the matching artifact when the filename and release match.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "release_version": "2026.05.09",
+  "environment": "production",
+  "minified_url": "https://acme.com/assets/app.js",
+  "source_map_url": "s3://artifacts/app.js.map",
+  "artifacts": { "debug_id": "web-20260509" }
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/source-maps/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete source-map artifact metadata.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/logs</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List application logs. Supports <code>start_at</code>, <code>end_at</code>, <code>level</code>, <code>release</code>, <code>environment</code>, <code>search</code>, <code>limit</code>, and <code>offset</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/logs/stats</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Get log totals grouped by level and release for the requested date range.</p></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SESSION REPLAY -->
+<!-- ============================================================ -->
+<section id="session-replay">
+<h2>Session Replay</h2>
+<p>Requires the <code>session_replay</code> module. The browser SDK records sampled, privacy-masked interaction events and stores them by session for later playback.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/session-replay</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List recorded sessions. Supports <code>start_at</code>, <code>end_at</code>, <code>limit</code>, and <code>offset</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"data"</span>: [
+    {
+      <span class="key">"id"</span>: <span class="string">"rec-f4a7c2"</span>,
+      <span class="key">"visitor_id"</span>: <span class="string">"v_7fz9k2"</span>,
+      <span class="key">"events_count"</span>: <span class="number">84</span>,
+      <span class="key">"entry_page"</span>: <span class="string">"/pricing"</span>,
+      <span class="key">"duration_ms"</span>: <span class="number">128000</span>,
+      <span class="key">"is_complete"</span>: <span class="bool">true</span>
+    }
+  ]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/session-replay/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch a recording with its ordered event stream for playback.</p>
   </div>
 </div>
 </section>
@@ -1978,7 +3376,7 @@ pulse.event(<span class="string">'purchase'</span>, {
 <!-- ============================================================ -->
 <section id="heatmaps">
 <h2>Heatmaps</h2>
-<p>Requires the <code>heatmaps</code> module. Visualize where users click on your pages.</p>
+<p>Requires the <code>heatmaps</code> module. Visualize where users click, label selectors as semantic events, evaluate those labels retroactively, and detect rage-click friction from repeated clicks on the same selector.</p>
 
 <div class="endpoint">
   <div class="endpoint-header">
@@ -2003,15 +3401,11 @@ pulse.event(<span class="string">'purchase'</span>, {
     <div class="code-wrap">
       <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code>{
-  <span class="key">"path"</span>: <span class="string">"/pricing"</span>,
-  <span class="key">"clicks"</span>: [
-    { <span class="key">"x"</span>: <span class="number">482</span>, <span class="key">"y"</span>: <span class="number">320</span>, <span class="key">"selector"</span>: <span class="string">"button.cta-primary"</span>, <span class="key">"count"</span>: <span class="number">234</span> },
-    { <span class="key">"x"</span>: <span class="number">720</span>, <span class="key">"y"</span>: <span class="number">580</span>, <span class="key">"selector"</span>: <span class="string">"a.plan-enterprise"</span>, <span class="key">"count"</span>: <span class="number">156</span> },
-    { <span class="key">"x"</span>: <span class="number">240</span>, <span class="key">"y"</span>: <span class="number">580</span>, <span class="key">"selector"</span>: <span class="string">"a.plan-starter"</span>, <span class="key">"count"</span>: <span class="number">98</span> },
-    { <span class="key">"x"</span>: <span class="number">480</span>, <span class="key">"y"</span>: <span class="number">580</span>, <span class="key">"selector"</span>: <span class="string">"a.plan-pro"</span>, <span class="key">"count"</span>: <span class="number">189</span> }
-  ],
-  <span class="key">"total_clicks"</span>: <span class="number">892</span>,
-  <span class="key">"viewport_width"</span>: <span class="number">1440</span>
+  <span class="key">"data"</span>: [
+    { <span class="key">"x"</span>: <span class="number">482</span>, <span class="key">"y"</span>: <span class="number">320</span>, <span class="key">"element_selector"</span>: <span class="string">"button.cta-primary"</span>, <span class="key">"count"</span>: <span class="number">234</span> },
+    { <span class="key">"x"</span>: <span class="number">720</span>, <span class="key">"y"</span>: <span class="number">580</span>, <span class="key">"element_selector"</span>: <span class="string">"a.plan-enterprise"</span>, <span class="key">"count"</span>: <span class="number">156</span> },
+    { <span class="key">"x"</span>: <span class="number">240</span>, <span class="key">"y"</span>: <span class="number">580</span>, <span class="key">"element_selector"</span>: <span class="string">"a.plan-starter"</span>, <span class="key">"count"</span>: <span class="number">98</span> }
+  ]
 }</code></pre>
     </div>
   </div>
@@ -2036,6 +3430,249 @@ pulse.event(<span class="string">'purchase'</span>, {
     </div>
   </div>
 </div>
+
+<h3>Visual Event Labels</h3>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/heatmaps/labels</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List visual event labels that map a page pattern and element selector to a semantic event name.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/heatmaps/labels</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a visual label for retroactive event definition from historical click data.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Pricing hero CTA",
+  "event_name": "pricing_hero_cta_click",
+  "path_pattern": "/pricing*",
+  "element_selector": "button.cta-primary",
+  "properties": { "area": "hero" },
+  "status": "active"
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/heatmaps/labels/stats</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Evaluate all active visual labels against historical clicks. Supports <code>start_at</code>, <code>end_at</code>, and <code>limit</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/heatmaps/labels/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Update a visual label. Use <code>DELETE /api/v1/heatmaps/labels/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/heatmaps/labels/{id}/stats</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Evaluate one visual label against historical clicks for a date range.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/heatmaps/friction</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Detect rage-click clusters from click events. A signal is returned when a visitor clicks the same page and selector at least three times inside a five-second window. Supports optional <code>path</code>, <code>start_at</code>, <code>end_at</code>, and <code>limit</code>.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- FEATURE FLAGS / REMOTE CONFIG -->
+<!-- ============================================================ -->
+<section id="feature-flags">
+<h2>Feature Flags / Remote Config</h2>
+<p>Requires the <code>feature_flags</code> module. Create typed feature flags and remote config entries with targeting rules, stable percentage rollouts, optional weighted variants, guardrail metadata, and experiment-backed assignments.</p>
+
+<h3>Targeting Rules</h3>
+<p>Targeting rules use <code>match</code> (<code>all</code> or <code>any</code>) plus conditions against <code>visitor_id</code>, <code>user_id</code>, <code>traits.*</code>, or arbitrary <code>context.*</code> fields. Supported operators are <code>exists</code>, <code>not_exists</code>, <code>eq</code>, <code>neq</code>, <code>contains</code>, <code>starts_with</code>, <code>ends_with</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code>, and <code>in</code>.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/feature-flags</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List feature flags for the project.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/feature-flags</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a feature flag. Use <code>experiment_id</code> to tie evaluation to an existing running experiment assignment.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"key"</span>: <span class="string">"checkout_redesign"</span>,
+  <span class="key">"name"</span>: <span class="string">"Checkout Redesign"</span>,
+  <span class="key">"enabled"</span>: <span class="bool">true</span>,
+  <span class="key">"flag_type"</span>: <span class="string">"boolean"</span>,
+  <span class="key">"default_value"</span>: <span class="bool">false</span>,
+  <span class="key">"rollout_percentage"</span>: <span class="number">25</span>,
+  <span class="key">"targeting_rules"</span>: {
+    <span class="key">"match"</span>: <span class="string">"all"</span>,
+    <span class="key">"conditions"</span>: [
+      { <span class="key">"field"</span>: <span class="string">"traits.plan"</span>, <span class="key">"op"</span>: <span class="string">"in"</span>, <span class="key">"value"</span>: [<span class="string">"pro"</span>, <span class="string">"business"</span>] },
+      { <span class="key">"field"</span>: <span class="string">"context.country"</span>, <span class="key">"op"</span>: <span class="string">"eq"</span>, <span class="key">"value"</span>: <span class="string">"US"</span> }
+    ]
+  },
+  <span class="key">"guardrail_metrics"</span>: [<span class="string">"checkout_error_rate"</span>, <span class="string">"purchase_conversion"</span>]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/feature-flags/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one feature flag.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/feature-flags/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update a feature flag definition, rollout, targeting rules, experiment binding, or guardrail metadata.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/feature-flags/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a feature flag and its evaluation history.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/feature-flags/{key}/evaluate</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Evaluate a flag for a visitor. Evaluation is stable for percentage rollouts and weighted variants, and each evaluation is recorded.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"visitor_id"</span>: <span class="string">"v_7fz9k2"</span>,
+  <span class="key">"user_id"</span>: <span class="string">"user_123"</span>,
+  <span class="key">"traits"</span>: { <span class="key">"plan"</span>: <span class="string">"pro"</span> },
+  <span class="key">"context"</span>: { <span class="key">"country"</span>: <span class="string">"US"</span>, <span class="key">"device"</span>: <span class="string">"desktop"</span> }
+}</code></pre>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"key"</span>: <span class="string">"checkout_redesign"</span>,
+  <span class="key">"enabled"</span>: <span class="bool">true</span>,
+  <span class="key">"matched"</span>: <span class="bool">true</span>,
+  <span class="key">"variant"</span>: <span class="bool">null</span>,
+  <span class="key">"value"</span>: <span class="bool">true</span>,
+  <span class="key">"reason"</span>: <span class="string">"match"</span>
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/feature-flags/{id}/evaluations</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List recent flag evaluations. Supports <code>limit</code> and <code>offset</code>.</p></div>
+</div>
+
+<h3>Remote Config</h3>
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/remote-config</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List remote config entries.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/remote-config</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a remote config value with optional targeting.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"key"</span>: <span class="string">"checkout_copy"</span>,
+  <span class="key">"value"</span>: { <span class="key">"headline"</span>: <span class="string">"Finish your secure checkout"</span> },
+  <span class="key">"targeting_rules"</span>: { <span class="key">"match"</span>: <span class="string">"all"</span>, <span class="key">"conditions"</span>: [] },
+  <span class="key">"is_active"</span>: <span class="bool">true</span>
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/remote-config/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one remote config entry.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/remote-config/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update a remote config value, targeting rules, or active state.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/remote-config/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a remote config entry.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/remote-config/{key}/evaluate</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Evaluate a remote config entry for a visitor and return the value when targeting matches.</p></div>
+</div>
 </section>
 
 <!-- ============================================================ -->
@@ -2043,7 +3680,7 @@ pulse.event(<span class="string">'purchase'</span>, {
 <!-- ============================================================ -->
 <section id="ab-testing">
 <h2>A/B Testing</h2>
-<p>Requires the <code>ab_testing</code> module. Create and manage experiments with multiple variants, assign visitors, and measure results against goals.</p>
+<p>Requires the <code>ab_testing</code> module. Create and manage experiments with multiple variants, assign visitors, and measure results against goals with lift, confidence, p-values, and significant winner detection.</p>
 
 <div class="endpoint">
   <div class="endpoint-header">
@@ -2151,34 +3788,35 @@ pulse.event(<span class="string">'purchase'</span>, {
     <span class="endpoint-path">/api/v1/experiments/{id}/results</span>
   </div>
   <div class="endpoint-body">
-    <p class="endpoint-desc">Get experiment results with per-variant conversion data.</p>
+    <p class="endpoint-desc">Get experiment results with per-variant conversion data, lift versus baseline, p-values, confidence, and significant winner detection. The first configured variant is used as the baseline.</p>
     <div class="code-wrap">
       <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code>{
   <span class="key">"experiment_id"</span>: <span class="string">"exp-a1b2c3d4-5678-9012-efab-cd3456789012"</span>,
-  <span class="key">"name"</span>: <span class="string">"CTA Button Color"</span>,
-  <span class="key">"status"</span>: <span class="string">"running"</span>,
-  <span class="key">"results"</span>: [
+  <span class="key">"baseline_variant"</span>: <span class="string">"control_blue"</span>,
+  <span class="key">"winner"</span>: <span class="string">"variant_green"</span>,
+  <span class="key">"variants"</span>: [
     {
-      <span class="key">"variant"</span>: <span class="string">"control_blue"</span>,
-      <span class="key">"visitors"</span>: <span class="number">1102</span>,
+      <span class="key">"name"</span>: <span class="string">"control_blue"</span>,
+      <span class="key">"assignments"</span>: <span class="number">1102</span>,
       <span class="key">"conversions"</span>: <span class="number">34</span>,
       <span class="key">"conversion_rate"</span>: <span class="number">3.09</span>,
-      <span class="key">"revenue"</span>: <span class="number">1632.66</span>
+      <span class="key">"lift_percent"</span>: null,
+      <span class="key">"p_value"</span>: null,
+      <span class="key">"confidence"</span>: null,
+      <span class="key">"significant"</span>: <span class="bool">false</span>,
+      <span class="key">"is_baseline"</span>: <span class="bool">true</span>
     },
     {
-      <span class="key">"variant"</span>: <span class="string">"variant_green"</span>,
-      <span class="key">"visitors"</span>: <span class="number">1067</span>,
+      <span class="key">"name"</span>: <span class="string">"variant_green"</span>,
+      <span class="key">"assignments"</span>: <span class="number">1067</span>,
       <span class="key">"conversions"</span>: <span class="number">41</span>,
       <span class="key">"conversion_rate"</span>: <span class="number">3.84</span>,
-      <span class="key">"revenue"</span>: <span class="number">1968.59</span>
-    },
-    {
-      <span class="key">"variant"</span>: <span class="string">"variant_orange"</span>,
-      <span class="key">"visitors"</span>: <span class="number">1072</span>,
-      <span class="key">"conversions"</span>: <span class="number">29</span>,
-      <span class="key">"conversion_rate"</span>: <span class="number">2.71</span>,
-      <span class="key">"revenue"</span>: <span class="number">1392.71</span>
+      <span class="key">"lift_percent"</span>: <span class="number">24.3</span>,
+      <span class="key">"p_value"</span>: <span class="number">0.041</span>,
+      <span class="key">"confidence"</span>: <span class="number">95.9</span>,
+      <span class="key">"significant"</span>: <span class="bool">true</span>,
+      <span class="key">"is_baseline"</span>: <span class="bool">false</span>
     }
   ]
 }</code></pre>
@@ -2192,18 +3830,18 @@ pulse.event(<span class="string">'purchase'</span>, {
     <span class="endpoint-path">/api/v1/experiments/{id}/assign</span>
   </div>
   <div class="endpoint-body">
-    <p class="endpoint-desc">Assign a visitor to a variant. Uses weighted random assignment. Returns the same variant for repeat calls with the same visitor.</p>
+    <p class="endpoint-desc">Assign a visitor to a variant. Uses stable weighted assignment and returns the same variant for repeat calls with the same visitor.</p>
     <div class="code-wrap">
       <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code><span class="cmd">curl</span> -X POST \
   -H <span class="string">"X-Pulse-Key: pa_live_8B57VGhehP5C2R8rnP535YYs"</span> \
   -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{ "visitor_id": "v_7fz9k2" }'</span> \
   https://pulse.ayushojha.com/api/v1/experiments/exp-a1b2c3d4-5678-9012-efab-cd3456789012/assign</code></pre>
     </div>
     <div class="code-wrap">
       <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code>{
-  <span class="key">"experiment_id"</span>: <span class="string">"exp-a1b2c3d4-5678-9012-efab-cd3456789012"</span>,
   <span class="key">"variant"</span>: <span class="string">"variant_green"</span>
 }</code></pre>
     </div>
@@ -2216,7 +3854,7 @@ pulse.event(<span class="string">'purchase'</span>, {
 <!-- ============================================================ -->
 <section id="surveys">
 <h2>Surveys</h2>
-<p>Requires the <code>surveys</code> module. Build in-app surveys with customizable triggers, appearance, and question types. Collect and analyze responses.</p>
+<p>Requires the <code>surveys</code> module. Build in-app surveys and adoption guides with customizable triggers, appearance, targeting, and analytics. Collect feedback, NPS, sentiment, tour completion, tooltip engagement, and onboarding outcomes.</p>
 
 <div class="endpoint">
   <div class="endpoint-header">
@@ -2389,6 +4027,26 @@ pulse.event(<span class="string">'purchase'</span>, {
 <div class="endpoint">
   <div class="endpoint-header">
     <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/surveys/{id}/nps</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Calculate NPS from completed responses. Optionally pass <code>question_id</code>; otherwise Pulse uses the first numeric answer in the 0-10 range.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/surveys/{id}/sentiment</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Run deterministic sentiment scoring over text answers. Optionally pass <code>question_id</code> to target a specific open-text question.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
     <span class="endpoint-path">/api/v1/surveys/active</span>
   </div>
   <div class="endpoint-body">
@@ -2412,6 +4070,92 @@ pulse.event(<span class="string">'purchase'</span>, {
   ]
 }</code></pre>
     </div>
+  </div>
+</div>
+
+<h3>Guides, Tooltips, and Tours</h3>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/guides</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List in-app guides, onboarding flows, product tours, tooltips, announcements, and checklists.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/guides</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a guide with ordered steps, targeting rules, visual appearance, and priority.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "New dashboard tour",
+  "guide_type": "tour",
+  "steps": [
+    { "id": "welcome", "title": "Welcome", "body": "Start here." },
+    { "id": "filters", "selector": "[data-tour='filters']", "body": "Filter your analysis." }
+  ],
+  "targeting": { "paths": ["/dashboard"], "segments": ["new_users"] },
+  "appearance": { "theme": "dark", "position": "bottom-right" },
+  "priority": 10
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/guides/active</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return active guides ordered by priority. Frontend renderers can apply the returned targeting and appearance metadata.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/guides/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one guide. Use <code>PUT /api/v1/guides/{id}</code> to update it or <code>DELETE /api/v1/guides/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/guides/{id}/status</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Set guide status to <code>draft</code>, <code>active</code>, <code>paused</code>, or <code>archived</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/guides/{id}/events</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Record guide events such as <code>shown</code>, <code>started</code>, <code>step_viewed</code>, <code>completed</code>, <code>dismissed</code>, and <code>converted</code>. Use <code>GET /api/v1/guides/{id}/events</code> for visitor event history.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/guides/{id}/stats</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return shown, started, completed, dismissed, converted, completion-rate, and dismissal-rate metrics.</p>
   </div>
 </div>
 </section>
@@ -2458,6 +4202,207 @@ Content-Disposition: attachment; filename="pages_2026-03-01_2026-03-22.csv"</cod
 /blog/analytics-guide,1203,987,312.1
 /signup,891,834,67.8</code></pre>
     </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- INTEGRATIONS -->
+<!-- ============================================================ -->
+<section id="integrations">
+<h2>Integrations</h2>
+<p>Requires the <code>integrations</code> module. The integrations catalog lists available and planned source, destination, SDK, framework, BI, and marketing integrations with capabilities and setup metadata.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/integrations</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List integrations. Supports <code>category</code>, <code>capability</code>, and <code>status</code> filters.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/integrations/{key}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one integration by key, including its capabilities and setup metadata.</p>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SOURCES -->
+<!-- ============================================================ -->
+<section id="sources">
+<h2>Sources</h2>
+<p>Requires the <code>sources</code> module. Sources register server-side or external systems that send JSON events into Pulse through source-specific tokens. Accepted source events are audited and routed to matching destinations.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/sources</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List event sources for the project. Responses include the source token prefix but never the full token.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/sources</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create an event source. The full source token is returned once in the creation response.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Stripe",
+  "source_type": "stripe.webhook",
+  "description": "Billing and subscription webhooks",
+  "schema": { "required": ["id", "type"] },
+  "config": { "environment": "production" },
+  "is_active": true
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/sources/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one source. Use <code>PUT /api/v1/sources/{id}</code> to update metadata or active status, or <code>DELETE /api/v1/sources/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/sources/{id}/ingestions</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List recent source ingestion attempts with payload, sanitized headers, event type, destination delivery count, and received timestamp. Supports <code>limit</code> and <code>offset</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/source/{id}/collect</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Public source ingestion endpoint. Authenticate with <code>X-Pulse-Source-Token</code> or <code>Authorization: Bearer ...</code>. Pulse derives the event type from <code>event_type</code>, <code>type</code>, <code>event</code>, or <code>name</code>, then routes the normalized event to destinations.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="cmd">curl</span> -X POST <span class="string">"https://pulse.ayushojha.com/api/source/7c2f0f06-9df7-48f0-a91c-4db0e0574cc3/collect"</span> \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -H <span class="string">"X-Pulse-Source-Token: psrc_..."</span> \
+  -d <span class="string">'{"event_type":"checkout.session.completed","customer_id":"cus_123","amount":4900}'</span></code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- DESTINATIONS -->
+<!-- ============================================================ -->
+<section id="destinations">
+<h2>Destinations</h2>
+<p>Requires the <code>destinations</code> module. Destinations route collected events to external systems through a reliable outbox with retries, dead-letter status, signed webhook delivery, and health reporting.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/destinations</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List event destinations for the project.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/destinations</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a webhook destination. Leave <code>event_types</code> empty to receive every collected event type. Use <code>transform</code> to shape the payload stored in the delivery outbox for this destination.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "name": "Warehouse ingest",
+  "destination_type": "webhook",
+  "endpoint_url": "https://warehouse.example.com/pulse/events",
+  "secret": "whsec_...",
+  "headers": { "X-Team": "growth" },
+  "event_types": ["pageview", "event", "identify"],
+  "transform": {
+    "include": ["event_type", "payload.customer_id", "payload.amount"],
+    "rename": { "payload.customer_id": "customer.id" },
+    "drop_fields": ["payload.card_token"],
+    "static_fields": { "source": "pulse" },
+    "wrap": "data"
+  },
+  "is_active": true
+}</code></pre>
+    </div>
+    <table>
+      <thead><tr><th>Transform key</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>include</code> / <code>include_fields</code></td><td>Whitelist dot-path fields from the original payload.</td></tr>
+        <tr><td><code>exclude</code> / <code>drop_fields</code></td><td>Remove dot-path fields from the destination payload.</td></tr>
+        <tr><td><code>rename</code> / <code>rename_fields</code></td><td>Move fields from old dot paths to new dot paths.</td></tr>
+        <tr><td><code>set</code> / <code>static_fields</code></td><td>Add static values at dot-path keys.</td></tr>
+        <tr><td><code>wrap</code> / <code>wrap_key</code></td><td>Wrap the transformed payload under one top-level key.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/destinations/{id}</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Fetch one destination. Use <code>PUT /api/v1/destinations/{id}</code> to update it, or <code>DELETE /api/v1/destinations/{id}</code> to remove it.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/destination-deliveries</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">List outbox deliveries. Supports <code>status</code>, <code>limit</code>, and <code>offset</code>. Status values are <code>pending</code>, <code>retry</code>, <code>delivered</code>, and <code>dead_letter</code>.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/destination-deliveries/{id}/retry</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Move a failed or dead-letter delivery back to the pending queue.</p>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/destination-health</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Return per-destination delivery counts, failure timestamps, and health status.</p>
   </div>
 </div>
 </section>
@@ -2522,11 +4467,340 @@ Content-Disposition: attachment; filename="pages_2026-03-01_2026-03-22.csv"</cod
 </section>
 
 <!-- ============================================================ -->
+<!-- GOVERNANCE -->
+<!-- ============================================================ -->
+<section id="governance">
+<h2>Governance</h2>
+<p>Requires the <code>governance</code> module. Governance lets teams define tracking plans, approve event schemas, validate required properties and types at ingest time, maintain a data dictionary, and monitor instrumentation health.</p>
+
+<h3>Tracking Plans</h3>
+<p>A project can have active tracking plans in <code>observe</code> mode, which records violations without blocking ingestion, or <code>reject</code> mode, which rejects invalid custom events after logging the validation issue.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/tracking-plans</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List tracking plans for the project.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/governance/tracking-plans</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a tracking plan. <code>enforcement_mode</code> must be <code>observe</code> or <code>reject</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"name"</span>: <span class="string">"Production Tracking Plan"</span>,
+  <span class="key">"description"</span>: <span class="string">"Approved production web events"</span>,
+  <span class="key">"enforcement_mode"</span>: <span class="string">"observe"</span>,
+  <span class="key">"is_active"</span>: <span class="bool">true</span>
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/tracking-plans/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one tracking plan.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/governance/tracking-plans/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update a tracking plan&rsquo;s name, description, enforcement mode, or active state.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/governance/tracking-plans/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a tracking plan and its plan-scoped schemas.</p></div>
+</div>
+
+<h3>Event Schemas</h3>
+<p>Event schemas define the approved event catalog. <code>property_schema</code> is a JSON object where each key is a property path and each value is either a type string or an object with <code>type</code>, <code>required</code>, and optional descriptive metadata. Supported types are <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, <code>object</code>, <code>array</code>, <code>timestamp</code>, and <code>any</code>.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/event-schemas</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List event schemas. Optionally filter with <code>tracking_plan_id</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/governance/event-schemas</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create an event schema. Status values are <code>draft</code>, <code>approved</code>, and <code>deprecated</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"tracking_plan_id"</span>: <span class="string">"b8f7de26-79b7-4d59-9cd0-7d1a2fe034a2"</span>,
+  <span class="key">"event_name"</span>: <span class="string">"purchase"</span>,
+  <span class="key">"description"</span>: <span class="string">"Completed checkout event"</span>,
+  <span class="key">"status"</span>: <span class="string">"approved"</span>,
+  <span class="key">"required_properties"</span>: [<span class="string">"amount"</span>, <span class="string">"currency"</span>],
+  <span class="key">"property_schema"</span>: {
+    <span class="key">"amount"</span>: <span class="string">"number"</span>,
+    <span class="key">"currency"</span>: { <span class="key">"type"</span>: <span class="string">"string"</span>, <span class="key">"required"</span>: <span class="bool">true</span> },
+    <span class="key">"metadata.coupon"</span>: <span class="string">"string"</span>
+  }
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/event-schemas/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Fetch one event schema.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/governance/event-schemas/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update an event schema definition.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/governance/event-schemas/{id}/status</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Move an event schema through the approval workflow by setting <code>draft</code>, <code>approved</code>, or <code>deprecated</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/governance/event-schemas/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete an event schema.</p></div>
+</div>
+
+<h3>Data Dictionary</h3>
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/data-dictionary</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List data dictionary entries. Optionally filter by <code>entry_type</code>: <code>event</code>, <code>property</code>, <code>metric</code>, or <code>dimension</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/governance/data-dictionary</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a data dictionary entry.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"entry_type"</span>: <span class="string">"property"</span>,
+  <span class="key">"name"</span>: <span class="string">"purchase.amount"</span>,
+  <span class="key">"data_type"</span>: <span class="string">"number"</span>,
+  <span class="key">"description"</span>: <span class="string">"Checkout total before tax"</span>,
+  <span class="key">"owner"</span>: <span class="string">"growth"</span>,
+  <span class="key">"is_pii"</span>: <span class="bool">false</span>
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/governance/data-dictionary/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update a data dictionary entry.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/governance/data-dictionary/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a data dictionary entry.</p></div>
+</div>
+
+<h3>Quality Monitoring</h3>
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/violations</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List ingestion quality violations. Supports <code>event_name</code>, <code>violation_type</code>, <code>limit</code>, and <code>offset</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/governance/health</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Summarize instrumentation health for the last 24 hours, including event coverage and violation counts.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"status"</span>: <span class="string">"warning"</span>,
+  <span class="key">"observed_events_24h"</span>: <span class="number">14</span>,
+  <span class="key">"covered_events_24h"</span>: <span class="number">12</span>,
+  <span class="key">"coverage_ratio"</span>: <span class="number">0.86</span>,
+  <span class="key">"violations_24h"</span>: <span class="number">7</span>,
+  <span class="key">"top_violations"</span>: [
+    { <span class="key">"event_name"</span>: <span class="string">"purchase"</span>, <span class="key">"violation_type"</span>: <span class="string">"missing_required_property"</span>, <span class="key">"count"</span>: <span class="number">3</span> }
+  ]
+}</code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- PRIVACY / AUDIT -->
+<!-- ============================================================ -->
+<section id="privacy">
+<h2>Privacy / Audit</h2>
+<p>Admin-scoped endpoints for runtime privacy settings, DSAR export/delete workflows, and audit trail review. Ingestion can anonymize IP addresses before GeoIP lookup, strip city/region precision, respect DNT and Sec-GPC, filter bots, and require explicit consent modes.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/privacy/settings</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Return project privacy controls. Defaults enable IP anonymization, DNT/Sec-GPC handling, and bot filtering.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/privacy/settings</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Update privacy controls. Supported fields are <code>anonymize_ip</code>, <code>respect_dnt</code>, <code>bot_filtering</code>, <code>consent_required</code>, <code>allowed_consent_modes</code>, and <code>blocked_user_agents</code>.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  "anonymize_ip": true,
+  "respect_dnt": true,
+  "bot_filtering": true,
+  "consent_required": true,
+  "allowed_consent_modes": ["analytics", "measurement"],
+  "blocked_user_agents": ["synthetic-monitor"]
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/privacy/users/{visitor_id}/export</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Export identity, sessions, pageviews, events, surveys, experiments, replay recordings, and telemetry for one visitor.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/privacy/users/{visitor_id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete stored visitor data across analytics tables and write an audit log entry.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/audit-logs</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List project audit logs. Supports <code>limit</code> and <code>offset</code>.</p></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- EMAIL REPORTS -->
+<!-- ============================================================ -->
+<section id="email-reports">
+<h2>Email Reports</h2>
+<p>Requires the <code>email_reports</code> module. Configure scheduled daily, weekly, or monthly digests. Delivery is handled by posting a normalized email payload to <code>EMAIL_REPORT_WEBHOOK_URL</code>.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-get">GET</span>
+    <span class="endpoint-path">/api/v1/email-reports</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">List report configurations and whether delivery is configured.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/email-reports</span>
+  </div>
+  <div class="endpoint-body">
+    <p class="endpoint-desc">Create a scheduled report.</p>
+    <div class="code-wrap">
+      <div class="code-label"><span>Request</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"name"</span>: <span class="string">"Weekly Growth"</span>,
+  <span class="key">"recipients"</span>: [<span class="string">"team@example.com"</span>],
+  <span class="key">"schedule"</span>: <span class="string">"weekly"</span>,
+  <span class="key">"modules"</span>: [<span class="string">"core"</span>, <span class="string">"goals"</span>],
+  <span class="key">"is_active"</span>: <span class="bool">true</span>
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-put">PUT</span>
+    <span class="endpoint-path">/api/v1/email-reports/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Update report recipients, schedule, modules, or active state.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-post">POST</span>
+    <span class="endpoint-path">/api/v1/email-reports/{id}/test</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Send a test report immediately through the configured delivery webhook.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header">
+    <span class="badge badge-delete">DELETE</span>
+    <span class="endpoint-path">/api/v1/email-reports/{id}</span>
+  </div>
+  <div class="endpoint-body"><p class="endpoint-desc">Delete a report configuration. Returns 204.</p></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
 <!-- ALERTS -->
 <!-- ============================================================ -->
 <section id="alerts">
 <h2>Alerts</h2>
-<p>Requires the <code>alerts</code> module. Set up threshold-based alert rules that notify you when metrics cross specified boundaries.</p>
+<p>Requires the <code>alerts</code> module. Set up threshold-based alert rules that notify webhook channels when metrics cross specified boundaries.</p>
 
 <div class="endpoint">
   <div class="endpoint-header">
@@ -2542,13 +4816,18 @@ Content-Disposition: attachment; filename="pages_2026-03-01_2026-03-22.csv"</cod
     {
       <span class="key">"id"</span>: <span class="string">"alt-c3d4e5f6-7890-1234-abcd-ef0123456789"</span>,
       <span class="key">"name"</span>: <span class="string">"Traffic Spike Alert"</span>,
-      <span class="key">"module"</span>: <span class="string">"pageviews"</span>,
+      <span class="key">"project_id"</span>: <span class="string">"a7b8c9d0-1234-5678-9abc-def012345678"</span>,
+      <span class="key">"module"</span>: <span class="string">"traffic"</span>,
       <span class="key">"metric"</span>: <span class="string">"visitors"</span>,
       <span class="key">"operator"</span>: <span class="string">"gt"</span>,
       <span class="key">"threshold"</span>: <span class="number">500</span>,
       <span class="key">"window_minutes"</span>: <span class="number">60</span>,
-      <span class="key">"enabled"</span>: <span class="bool">true</span>,
-      <span class="key">"last_triggered"</span>: <span class="string">"2026-03-20T14:30:00Z"</span>
+      <span class="key">"cooldown_minutes"</span>: <span class="number">360</span>,
+      <span class="key">"notify_channels"</span>: [
+        {<span class="key">"type"</span>: <span class="string">"webhook"</span>, <span class="key">"url"</span>: <span class="string">"https://hooks.example.com/pulse"</span>}
+      ],
+      <span class="key">"is_active"</span>: <span class="bool">true</span>,
+      <span class="key">"last_triggered_at"</span>: <span class="string">"2026-03-20T14:30:00Z"</span>
     }
   ]
 }</code></pre>
@@ -2567,13 +4846,13 @@ Content-Disposition: attachment; filename="pages_2026-03-01_2026-03-22.csv"</cod
       <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
       <tbody>
         <tr><td><code>name</code></td><td>string</td><td>Human-readable name for the alert.</td></tr>
-        <tr><td><code>module</code></td><td>string</td><td>Module to monitor (e.g., <code>pageviews</code>, <code>error_tracking</code>).</td></tr>
-        <tr><td><code>metric</code></td><td>string</td><td>Metric within the module (e.g., <code>visitors</code>, <code>error_count</code>).</td></tr>
+        <tr><td><code>module</code></td><td>string</td><td>Label for the area being monitored (e.g., <code>traffic</code>, <code>error_tracking</code>).</td></tr>
+        <tr><td><code>metric</code></td><td>string</td><td>Supported values: <code>pageviews</code>, <code>visitors</code>, <code>bounce_rate</code>, <code>error_count</code>, <code>avg_duration</code>.</td></tr>
         <tr><td><code>operator</code></td><td>string</td><td>Comparison: <code>gt</code>, <code>lt</code>, <code>gte</code>, <code>lte</code>, <code>eq</code>.</td></tr>
         <tr><td><code>threshold</code></td><td>number</td><td>Value to compare against.</td></tr>
         <tr><td><code>window_minutes</code></td><td>integer</td><td>Rolling window size in minutes.</td></tr>
         <tr><td><code>cooldown_minutes</code></td><td>integer</td><td>Minimum time between repeated alerts.</td></tr>
-        <tr><td><code>notify_channels</code></td><td>array</td><td>Notification targets (webhook URLs or email).</td></tr>
+        <tr><td><code>notify_channels</code></td><td>array</td><td>Webhook targets. Each item supports <code>type: "webhook"</code>, <code>url</code>, and optional <code>secret</code> for HMAC signatures.</td></tr>
       </tbody>
     </table>
     <div class="code-wrap">
@@ -2590,11 +4869,33 @@ Content-Disposition: attachment; filename="pages_2026-03-01_2026-03-22.csv"</cod
     "window_minutes": 15,
     "cooldown_minutes": 60,
     "notify_channels": [
-      {"type": "webhook", "url": "https://hooks.slack.com/services/T00/B00/xxx"},
-      {"type": "email", "address": "ops@acme.com"}
+      {"type": "webhook", "url": "https://hooks.slack.com/services/T00/B00/xxx", "secret": "optional-signing-secret"}
     ]
   }'</span> \
   https://pulse.ayushojha.com/api/v1/alerts</code></pre>
+    </div>
+    <div class="callout callout-info">
+      <span class="callout-icon">&#8505;</span>
+      <div class="callout-text"><strong>Alert webhooks:</strong> When an alert fires, Pulse sends an <code>alert_triggered</code> JSON payload to each webhook channel. If <code>secret</code> is set, the request includes an <code>X-Pulse-Signature</code> HMAC-SHA256 signature over the raw JSON body.</div>
+    </div>
+    <div class="code-wrap">
+      <div class="code-label"><span>Webhook Payload</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code>{
+  <span class="key">"event"</span>: <span class="string">"alert_triggered"</span>,
+  <span class="key">"project_id"</span>: <span class="string">"a7b8c9d0-1234-5678-9abc-def012345678"</span>,
+  <span class="key">"triggered_at"</span>: <span class="string">"2026-05-09T18:22:14Z"</span>,
+  <span class="key">"metric_value"</span>: <span class="number">73</span>,
+  <span class="key">"alert"</span>: {
+    <span class="key">"id"</span>: <span class="string">"alt-c3d4e5f6-7890-1234-abcd-ef0123456789"</span>,
+    <span class="key">"name"</span>: <span class="string">"Error Spike Alert"</span>,
+    <span class="key">"module"</span>: <span class="string">"error_tracking"</span>,
+    <span class="key">"metric"</span>: <span class="string">"error_count"</span>,
+    <span class="key">"operator"</span>: <span class="string">"gt"</span>,
+    <span class="key">"threshold"</span>: <span class="number">50</span>,
+    <span class="key">"window_minutes"</span>: <span class="number">15</span>,
+    <span class="key">"cooldown_minutes"</span>: <span class="number">60</span>
+  }
+}</code></pre>
     </div>
   </div>
 </div>
@@ -2632,7 +4933,11 @@ Content-Disposition: attachment; filename="pages_2026-03-01_2026-03-22.csv"</cod
       <div class="code-label"><span>Response 200</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
       <pre><code>{
   <span class="key">"id"</span>: <span class="string">"alt-c3d4e5f6-7890-1234-abcd-ef0123456789"</span>,
-  <span class="key">"enabled"</span>: <span class="bool">false</span>
+  <span class="key">"name"</span>: <span class="string">"Error Spike Alert"</span>,
+  <span class="key">"module"</span>: <span class="string">"error_tracking"</span>,
+  <span class="key">"metric"</span>: <span class="string">"error_count"</span>,
+  <span class="key">"is_active"</span>: <span class="bool">false</span>,
+  <span class="key">"updated_at"</span>: <span class="string">"2026-05-09T18:23:01Z"</span>
 }</code></pre>
     </div>
   </div>

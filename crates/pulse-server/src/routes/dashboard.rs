@@ -3,10 +3,10 @@ use axum::extract::{Path, Query};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Extension;
 use axum::Form;
-use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::Cookie;
+use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Duration, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -242,17 +242,18 @@ fn render_template<T: Template>(tmpl: T) -> Response {
         Ok(html) => Html(html).into_response(),
         Err(e) => {
             tracing::error!("Template render error: {e}");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Template error").into_response()
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Template error",
+            )
+                .into_response()
         }
     }
 }
 
 // ── Full page routes ──
 
-pub async fn dashboard_index(
-    Extension(state): Extension<SharedState>,
-    jar: CookieJar,
-) -> Response {
+pub async fn dashboard_index(Extension(state): Extension<SharedState>, jar: CookieJar) -> Response {
     if get_session(&jar, &state).is_some() {
         Redirect::to("/dashboard/overview").into_response()
     } else {
@@ -312,10 +313,7 @@ pub async fn logout(jar: CookieJar) -> Response {
     (jar, Redirect::to("/dashboard/login")).into_response()
 }
 
-pub async fn overview_page(
-    Extension(state): Extension<SharedState>,
-    jar: CookieJar,
-) -> Response {
+pub async fn overview_page(Extension(state): Extension<SharedState>, jar: CookieJar) -> Response {
     let Some(session) = get_session(&jar, &state) else {
         return Redirect::to("/dashboard/login").into_response();
     };
@@ -428,26 +426,72 @@ pub async fn htmx_stats_cards(
         Ok(s) => s,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
-    let previous = match qsvc::fetch_stats(&state.db, session.project_id, prev_start, start, today).await {
-        Ok(s) => s,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let previous =
+        match qsvc::fetch_stats(&state.db, session.project_id, prev_start, start, today).await {
+            Ok(s) => s,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
 
-    let bounce_cur = if current.2 > 0 { current.3 as f64 / current.2 as f64 * 100.0 } else { 0.0 };
-    let bounce_prev = if previous.2 > 0 { previous.3 as f64 / previous.2 as f64 * 100.0 } else { 0.0 };
-    let dur_cur = if current.2 > 0 { current.4 as f64 / current.2 as f64 / 1000.0 } else { 0.0 };
-    let dur_prev = if previous.2 > 0 { previous.4 as f64 / previous.2 as f64 / 1000.0 } else { 0.0 };
+    let bounce_cur = if current.2 > 0 {
+        current.3 as f64 / current.2 as f64 * 100.0
+    } else {
+        0.0
+    };
+    let bounce_prev = if previous.2 > 0 {
+        previous.3 as f64 / previous.2 as f64 * 100.0
+    } else {
+        0.0
+    };
+    let dur_cur = if current.2 > 0 {
+        current.4 as f64 / current.2 as f64 / 1000.0
+    } else {
+        0.0
+    };
+    let dur_prev = if previous.2 > 0 {
+        previous.4 as f64 / previous.2 as f64 / 1000.0
+    } else {
+        0.0
+    };
 
     let mk = |label: &str, cur: f64, prev: f64, display: String, invert: bool| {
         let (change, positive) = format_change(cur, prev, invert);
-        StatCard { label: label.to_string(), display_value: display, change, positive }
+        StatCard {
+            label: label.to_string(),
+            display_value: display,
+            change,
+            positive,
+        }
     };
 
     let cards = vec![
-        mk("Pageviews", current.0 as f64, previous.0 as f64, format_number(current.0), false),
-        mk("Visitors", current.1 as f64, previous.1 as f64, format_number(current.1), false),
-        mk("Bounce Rate", bounce_cur, bounce_prev, format!("{:.1}%", bounce_cur), true),
-        mk("Avg Duration", dur_cur, dur_prev, format!("{:.1}s", dur_cur), false),
+        mk(
+            "Pageviews",
+            current.0 as f64,
+            previous.0 as f64,
+            format_number(current.0),
+            false,
+        ),
+        mk(
+            "Visitors",
+            current.1 as f64,
+            previous.1 as f64,
+            format_number(current.1),
+            false,
+        ),
+        mk(
+            "Bounce Rate",
+            bounce_cur,
+            bounce_prev,
+            format!("{:.1}%", bounce_cur),
+            true,
+        ),
+        mk(
+            "Avg Duration",
+            dur_cur,
+            dur_prev,
+            format!("{:.1}s", dur_cur),
+            false,
+        ),
     ];
 
     render_template(StatsCardsPartial { cards })
@@ -464,7 +508,8 @@ pub async fn htmx_timeseries(
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
 
-    let data = match qsvc::fetch_timeseries(&state.db, session.project_id, start, end, today).await {
+    let data = match qsvc::fetch_timeseries(&state.db, session.project_id, start, end, today).await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
@@ -483,10 +528,11 @@ pub async fn htmx_pages_table(
     };
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
-    let data = match qsvc::fetch_pages(&state.db, session.project_id, start, end, today, 50, 0).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_pages(&state.db, session.project_id, start, end, today, 50, 0).await {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
     render_two_col_table("Page", "path", "Views", "views", &data)
 }
 
@@ -500,7 +546,9 @@ pub async fn htmx_referrers_table(
     };
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
-    let data = match qsvc::fetch_referrers(&state.db, session.project_id, start, end, today, 50, 0).await {
+    let data = match qsvc::fetch_referrers(&state.db, session.project_id, start, end, today, 50, 0)
+        .await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
@@ -517,10 +565,11 @@ pub async fn htmx_events_table(
     };
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
-    let data = match qsvc::fetch_events(&state.db, session.project_id, start, end, today, 50, 0).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_events(&state.db, session.project_id, start, end, today, 50, 0).await {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
     render_two_col_table("Event", "event_name", "Count", "count", &data)
 }
 
@@ -534,19 +583,22 @@ pub async fn htmx_devices_table(
     };
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
-    let data = match qsvc::fetch_devices(&state.db, session.project_id, start, end, today, 50, 0).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_devices(&state.db, session.project_id, start, end, today, 50, 0).await {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
 
-    let mut html = String::from(r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    let mut html = String::from(
+        r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table class="w-full text-sm">
             <thead><tr class="border-b border-gray-100 bg-gray-50">
                 <th class="text-left px-4 py-3 font-medium text-gray-600">Browser</th>
                 <th class="text-left px-4 py-3 font-medium text-gray-600">OS</th>
                 <th class="text-left px-4 py-3 font-medium text-gray-600">Device</th>
                 <th class="text-right px-4 py-3 font-medium text-gray-600">Visitors</th>
-            </tr></thead><tbody>"#);
+            </tr></thead><tbody>"#,
+    );
 
     for item in &data {
         let browser = item["browser"].as_str().unwrap_or("-");
@@ -581,28 +633,33 @@ pub async fn htmx_geo_table(
     };
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
-    let data = match qsvc::fetch_geo(&state.db, session.project_id, start, end, today, 50, 0).await {
+    let data = match qsvc::fetch_geo(&state.db, session.project_id, start, end, today, 50, 0).await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
     render_two_col_table("Country", "country", "Visitors", "visitors", &data)
 }
 
-pub async fn htmx_realtime(
-    Extension(state): Extension<SharedState>,
-    jar: CookieJar,
-) -> Response {
+pub async fn htmx_realtime(Extension(state): Extension<SharedState>, jar: CookieJar) -> Response {
     let Some(session) = get_session(&jar, &state) else {
         return Html("Unauthorized".to_string()).into_response();
     };
 
-    let active = match qsvc::fetch_realtime(&state, session.project_id).await {
-        Ok(n) => n,
-        Err(_) => 0,
-    };
+    let active: i64 = qsvc::fetch_realtime(&state, session.project_id)
+        .await
+        .unwrap_or_default();
 
-    let dot_color = if active > 0 { "bg-emerald-400" } else { "bg-gray-400" };
-    let text_color = if active > 0 { "text-emerald-600" } else { "text-gray-500" };
+    let dot_color = if active > 0 {
+        "bg-emerald-400"
+    } else {
+        "bg-gray-400"
+    };
+    let text_color = if active > 0 {
+        "text-emerald-600"
+    } else {
+        "text-gray-500"
+    };
 
     let html = format!(
         r#"<div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -677,11 +734,14 @@ pub async fn htmx_visitors_live_count(
     let Some(session) = get_session(&jar, &state) else {
         return Html("Unauthorized".to_string()).into_response();
     };
-    let active = match qsvc::fetch_realtime(&state, session.project_id).await {
-        Ok(n) => n,
-        Err(_) => 0,
+    let active: i64 = qsvc::fetch_realtime(&state, session.project_id)
+        .await
+        .unwrap_or_default();
+    let dot_color = if active > 0 {
+        "bg-emerald-400"
+    } else {
+        "bg-gray-300"
     };
-    let dot_color = if active > 0 { "bg-emerald-400" } else { "bg-gray-300" };
     let html = format!(
         r#"<div class="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5">
             <span class="w-2 h-2 rounded-full {dot_color} animate-pulse"></span>
@@ -763,10 +823,13 @@ pub async fn htmx_visitors_table(
     let end = params.end_at.unwrap_or(default_end);
     let search = params.search.as_deref().filter(|s| !s.is_empty());
 
-    let data = match qsvc::fetch_visitors_list(&state.db, session.project_id, start, end, 50, 0, search).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_visitors_list(&state.db, session.project_id, start, end, 50, 0, search)
+            .await
+        {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
 
     let mut html = String::from(
         r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -830,10 +893,13 @@ pub async fn htmx_visitor_summary(
     };
     let (start, end) = parse_dates(&params);
 
-    let data = match qsvc::fetch_visitor_summary(&state.db, session.project_id, &visitor_id, start, end).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_visitor_summary(&state.db, session.project_id, &visitor_id, start, end)
+            .await
+        {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
 
     let sessions = data["session_count"].as_i64().unwrap_or(0);
     let pvs = data["total_pageviews"].as_i64().unwrap_or(0);
@@ -896,10 +962,13 @@ pub async fn htmx_visitor_sessions(
     };
     let (start, end) = parse_dates(&params);
 
-    let data = match qsvc::fetch_visitor_sessions(&state.db, session.project_id, &visitor_id, start, end).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_visitor_sessions(&state.db, session.project_id, &visitor_id, start, end)
+            .await
+        {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
 
     if data.is_empty() {
         return Html(r#"<div class="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">No sessions found</div>"#.to_string()).into_response();
@@ -987,12 +1056,13 @@ pub async fn htmx_visitor_session_detail(
             Err(e) => return Html(format!("Error: {e}")).into_response(),
         };
 
-    let mut html = String::from(
-        r#"<div class="border-t border-gray-100 px-4 py-3 bg-gray-50/50">"#,
-    );
+    let mut html =
+        String::from(r#"<div class="border-t border-gray-100 px-4 py-3 bg-gray-50/50">"#);
 
     if pageviews.is_empty() && events.is_empty() {
-        html.push_str(r#"<p class="text-xs text-gray-400 text-center py-2">No details available</p>"#);
+        html.push_str(
+            r#"<p class="text-xs text-gray-400 text-center py-2">No details available</p>"#,
+        );
     } else {
         html.push_str(r#"<div class="space-y-1.5">"#);
 
@@ -1001,7 +1071,8 @@ pub async fn htmx_visitor_session_detail(
             let title = pv["title"].as_str().unwrap_or("");
             let dur = pv["duration_ms"].as_i64().unwrap_or(0);
             let created = pv["created_at"].as_str().unwrap_or("");
-            let time_part = &created[created.len().saturating_sub(14)..created.len().saturating_sub(5)];
+            let time_part =
+                &created[created.len().saturating_sub(14)..created.len().saturating_sub(5)];
             let dur_s = dur as f64 / 1000.0;
 
             html.push_str(&format!(
@@ -1019,7 +1090,8 @@ pub async fn htmx_visitor_session_detail(
             let name = ev["event_name"].as_str().unwrap_or("-");
             let path = ev["path"].as_str().unwrap_or("");
             let created = ev["created_at"].as_str().unwrap_or("");
-            let time_part = &created[created.len().saturating_sub(14)..created.len().saturating_sub(5)];
+            let time_part =
+                &created[created.len().saturating_sub(14)..created.len().saturating_sub(5)];
 
             html.push_str(&format!(
                 r#"<div class="flex items-center gap-3 text-xs">
@@ -1049,7 +1121,15 @@ pub async fn htmx_visitor_activity_chart(
     };
     let (start, end) = parse_dates(&params);
 
-    let data = match qsvc::fetch_visitor_daily_activity(&state.db, session.project_id, &visitor_id, start, end).await {
+    let data = match qsvc::fetch_visitor_daily_activity(
+        &state.db,
+        session.project_id,
+        &visitor_id,
+        start,
+        end,
+    )
+    .await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
@@ -1128,7 +1208,15 @@ pub async fn htmx_visitor_events_breakdown(
     };
     let (start, end) = parse_dates(&params);
 
-    let data = match qsvc::fetch_visitor_event_breakdown(&state.db, session.project_id, &visitor_id, start, end).await {
+    let data = match qsvc::fetch_visitor_event_breakdown(
+        &state.db,
+        session.project_id,
+        &visitor_id,
+        start,
+        end,
+    )
+    .await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
@@ -1138,8 +1226,10 @@ pub async fn htmx_visitor_events_breakdown(
             r#"<div class="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 class="text-sm font-medium text-gray-700 mb-4">Event Breakdown</h3>
                 <p class="text-sm text-gray-400 text-center py-8">No events recorded</p>
-            </div>"#.to_string(),
-        ).into_response();
+            </div>"#
+                .to_string(),
+        )
+        .into_response();
     }
 
     let chart_json = serde_json::to_string(&data).unwrap_or_else(|_| "[]".to_string());
@@ -1246,7 +1336,15 @@ pub async fn htmx_pricing_timeseries(
     let (start, end) = parse_dates(&params);
     let today = Utc::now().date_naive();
 
-    let data = match qsvc::fetch_pricing_timeseries(&state.db, session.project_id, start, end, today).await {
+    let data = match qsvc::fetch_pricing_timeseries(
+        &state.db,
+        session.project_id,
+        start,
+        end,
+        today,
+    )
+    .await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
@@ -1344,7 +1442,8 @@ pub async fn htmx_pricing_frequency(
     };
     let (start, end) = parse_dates(&params);
 
-    let data = match qsvc::fetch_pricing_frequency(&state.db, session.project_id, start, end).await {
+    let data = match qsvc::fetch_pricing_frequency(&state.db, session.project_id, start, end).await
+    {
         Ok(d) => d,
         Err(e) => return Html(format!("Error: {e}")).into_response(),
     };
@@ -1415,10 +1514,11 @@ pub async fn htmx_pricing_referrers(
     };
     let (start, end) = parse_dates(&params);
 
-    let data = match qsvc::fetch_pricing_referrers(&state.db, session.project_id, start, end, 20).await {
-        Ok(d) => d,
-        Err(e) => return Html(format!("Error: {e}")).into_response(),
-    };
+    let data =
+        match qsvc::fetch_pricing_referrers(&state.db, session.project_id, start, end, 20).await {
+            Ok(d) => d,
+            Err(e) => return Html(format!("Error: {e}")).into_response(),
+        };
 
     let mut html = String::from(
         r#"<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -1442,7 +1542,9 @@ pub async fn htmx_pricing_referrers(
     }
 
     if data.is_empty() {
-        html.push_str(r#"<tr><td colspan="2" class="px-4 py-6 text-center text-gray-400">No data</td></tr>"#);
+        html.push_str(
+            r#"<tr><td colspan="2" class="px-4 py-6 text-center text-gray-400">No data</td></tr>"#,
+        );
     }
 
     html.push_str("</tbody></table></div>");
@@ -1497,13 +1599,13 @@ pub async fn htmx_pricing_heatmap(
     }
 
     // Data rows
-    for dow in 0..7 {
+    for (dow, row) in grid.iter().enumerate() {
         html.push_str(&format!(
             r#"<div class="text-xs text-gray-500 leading-6 pr-1 text-right">{}</div>"#,
             day_names[dow]
         ));
-        for hour in 0..24 {
-            let val = grid[dow][hour];
+        for val in row {
+            let val = *val;
             let opacity = if val == 0 {
                 0.05
             } else {
@@ -1646,9 +1748,9 @@ fn render_two_col_table(
     }
 
     if data.is_empty() {
-        html.push_str(&format!(
-            r#"<tr><td colspan="2" class="px-4 py-8 text-center text-gray-400">No data for this period</td></tr>"#
-        ));
+        html.push_str(
+            r#"<tr><td colspan="2" class="px-4 py-8 text-center text-gray-400">No data for this period</td></tr>"#,
+        );
     }
 
     html.push_str("</tbody></table></div>");

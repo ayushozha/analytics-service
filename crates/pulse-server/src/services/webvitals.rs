@@ -67,9 +67,7 @@ pub async fn get_vitals_summary(
         .await?;
 
         let (p50, p75, p99) = percentiles
-            .map(|(a, b, c)| {
-                (a.unwrap_or(0.0), b.unwrap_or(0.0), c.unwrap_or(0.0))
-            })
+            .map(|(a, b, c)| (a.unwrap_or(0.0), b.unwrap_or(0.0), c.unwrap_or(0.0)))
             .unwrap_or((0.0, 0.0, 0.0));
 
         // Count rating distribution

@@ -24,10 +24,7 @@ pub fn start_retention_task(state: Arc<AppState>) {
         loop {
             let now = Utc::now();
             let tomorrow = (now + Duration::days(1)).date_naive();
-            let next_run = tomorrow
-                .and_hms_opt(1, 0, 0)
-                .expect("valid time")
-                .and_utc();
+            let next_run = tomorrow.and_hms_opt(1, 0, 0).expect("valid time").and_utc();
             let sleep_duration = (next_run - now)
                 .to_std()
                 .unwrap_or(std::time::Duration::from_secs(3600));
@@ -82,6 +79,15 @@ async fn run_retention(db: &PgPool, cutoff: NaiveDate) -> Result<(), anyhow::Err
     let deleted = result.rows_affected();
     if deleted > 0 {
         info!("Cleaned {deleted} expired sessions");
+    }
+
+    let result = sqlx::query("DELETE FROM log_entries WHERE created_at < $1::date")
+        .bind(cutoff)
+        .execute(db)
+        .await?;
+    let deleted = result.rows_affected();
+    if deleted > 0 {
+        info!("Cleaned {deleted} expired log entries");
     }
 
     info!("Retention cleanup complete");

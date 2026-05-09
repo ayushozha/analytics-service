@@ -7,7 +7,10 @@ pub async fn serve_script() -> impl IntoResponse {
     (
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
             (header::CACHE_CONTROL, "public, max-age=86400"),
         ],
         PULSE_SCRIPT,

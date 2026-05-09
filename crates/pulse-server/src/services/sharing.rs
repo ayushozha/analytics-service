@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
@@ -18,6 +18,7 @@ pub struct SharedDashboard {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct CreateSharedDashboardInput {
     pub name: String,
     pub modules: Vec<String>,
@@ -26,8 +27,8 @@ pub struct CreateSharedDashboardInput {
 }
 
 fn generate_token() -> String {
-    let mut rng = rand::thread_rng();
-    let random_bytes: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
+    let mut rng = rand::rng();
+    let random_bytes: Vec<u8> = (0..32).map(|_| rng.random()).collect();
     hex::encode(random_bytes)
 }
 
@@ -88,18 +89,17 @@ pub async fn delete_shared_dashboard(
     project_id: Uuid,
     id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        "DELETE FROM shared_dashboards WHERE id = $1 AND project_id = $2",
-    )
-    .bind(id)
-    .bind(project_id)
-    .execute(db)
-    .await?;
+    let result = sqlx::query("DELETE FROM shared_dashboards WHERE id = $1 AND project_id = $2")
+        .bind(id)
+        .bind(project_id)
+        .execute(db)
+        .await?;
 
     Ok(result.rows_affected() > 0)
 }
 
 /// Resolve a shared dashboard by its token.
+#[allow(dead_code)]
 pub async fn resolve_shared_token(
     db: &PgPool,
     token: &str,
@@ -125,6 +125,7 @@ pub async fn resolve_shared_token(
 }
 
 /// Verify password for a shared dashboard.
+#[allow(dead_code)]
 pub fn verify_shared_password(dashboard: &SharedDashboard, password: &str) -> bool {
     match &dashboard.password_hash {
         Some(stored_hash) => {

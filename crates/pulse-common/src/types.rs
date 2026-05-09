@@ -5,22 +5,49 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum CollectRequest {
-    Pageview { payload: PageviewPayload },
-    Event { payload: EventPayload },
-    Identify { payload: IdentifyPayload },
+    Pageview {
+        payload: PageviewPayload,
+    },
+    Event {
+        payload: EventPayload,
+    },
+    Identify {
+        payload: IdentifyPayload,
+    },
     #[serde(rename = "web_vital")]
-    WebVital { payload: WebVitalPayload },
+    WebVital {
+        payload: WebVitalPayload,
+    },
     #[serde(rename = "scroll_depth")]
-    ScrollDepth { payload: ScrollDepthPayload },
+    ScrollDepth {
+        payload: ScrollDepthPayload,
+    },
     #[serde(rename = "search_query")]
-    SearchQuery { payload: SearchQueryPayload },
-    Outlink { payload: OutlinkPayload },
+    SearchQuery {
+        payload: SearchQueryPayload,
+    },
+    Outlink {
+        payload: OutlinkPayload,
+    },
     #[serde(rename = "js_error")]
-    JsError { payload: JsErrorPayload },
+    JsError {
+        payload: JsErrorPayload,
+    },
+    Log {
+        payload: LogPayload,
+    },
     #[serde(rename = "click_event")]
-    ClickEvent { payload: ClickEventPayload },
+    ClickEvent {
+        payload: ClickEventPayload,
+    },
     #[serde(rename = "survey_response")]
-    SurveyResponse { payload: SurveyResponsePayload },
+    SurveyResponse {
+        payload: SurveyResponsePayload,
+    },
+    #[serde(rename = "session_replay")]
+    SessionReplay {
+        payload: SessionReplayPayload,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +57,10 @@ pub struct CollectEnvelope {
     pub visitor_id: String,
     #[serde(default)]
     pub timestamp: Option<i64>,
+    #[serde(default)]
+    pub consent_mode: Option<String>,
+    #[serde(default)]
+    pub consent_granted: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,7 +101,17 @@ pub struct EventPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentifyPayload {
+    #[serde(default)]
+    pub user_id: Option<String>,
     pub traits: serde_json::Value,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub account_name: Option<String>,
+    #[serde(default)]
+    pub account_traits: Option<serde_json::Value>,
+    #[serde(default)]
+    pub account_role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +160,24 @@ pub struct JsErrorPayload {
     pub colno: Option<i32>,
     #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
+    pub release: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogPayload {
+    pub level: String,
+    pub message: String,
+    #[serde(default)]
+    pub body: Option<serde_json::Value>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub release: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +201,21 @@ pub struct SurveyResponsePayload {
     pub completed: Option<bool>,
     #[serde(default)]
     pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionReplayPayload {
+    pub events: serde_json::Value,
+    #[serde(default)]
+    pub started_at: Option<i64>,
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
+    #[serde(default)]
+    pub entry_page: Option<String>,
+    #[serde(default)]
+    pub screen: Option<String>,
+    #[serde(default)]
+    pub is_complete: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

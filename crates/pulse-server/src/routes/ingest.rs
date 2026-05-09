@@ -9,14 +9,18 @@ use std::net::SocketAddr;
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::AuthenticatedProject;
 use crate::models::buffered::{
-    BufferedClickEvent, BufferedJsError, BufferedOutlink, BufferedScrollDepth, BufferedSearchQuery,
-    BufferedWebVital,
+    BufferedClickEvent, BufferedJsError, BufferedLogEntry, BufferedOutlink, BufferedScrollDepth,
+    BufferedSearchQuery, BufferedWebVital,
 };
 use crate::models::event::BufferedEvent;
 use crate::models::pageview::BufferedPageview;
-use crate::services::{geo, ingestion, modules, session, ua};
+use crate::services::{
+    alerts, destinations, error_tracking, geo, goals, governance, identity, ingestion, modules,
+    privacy, session, session_replay, surveys, ua,
+};
 use crate::state::SharedState;
-use pulse_common::types::CollectEnvelope;
+use pulse_common::types::{CollectEnvelope, CollectRequest};
+use uuid::Uuid;
 
 pub async fn collect(
     Extension(state): Extension<SharedState>,
@@ -33,27 +37,68 @@ pub async fn collect(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    let client_ip = headers
+    let raw_client_ip = headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| addr.ip().to_string());
 
+    let privacy_settings = privacy::get_privacy_settings(&state.db, auth.project_id).await?;
+    let dnt_enabled = headers
+        .get("dnt")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == "1")
+        || headers
+            .get("sec-gpc")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v == "1");
+    let decision = privacy::ingest_privacy_decision(
+        &privacy_settings,
+        user_agent,
+        dnt_enabled,
+        envelope.consent_mode.as_deref(),
+        envelope.consent_granted,
+    );
+    if !decision.accepted {
+        return Ok(axum::Json(json!({
+            "ok": true,
+            "tracked": false,
+            "reason": decision.reason,
+        })));
+    }
+
+    let client_ip = if privacy_settings.anonymize_ip {
+        privacy::anonymize_ip(&raw_client_ip)
+    } else {
+        raw_client_ip
+    };
+
     // Parse User-Agent
     let parsed_ua = ua::parse_user_agent(user_agent);
 
     // GeoIP lookup
-    let geo_result = if let Some(ref reader) = state.geoip {
+    let mut geo_result = if let Some(ref reader) = state.geoip {
         geo::lookup_ip(reader, &client_ip)
     } else {
         geo::GeoResult::default()
     };
+    if privacy_settings.anonymize_ip {
+        privacy::strip_geo_precision(&mut geo_result);
+    }
 
     let now = envelope
         .timestamp
         .map(|ts| chrono::DateTime::from_timestamp_millis(ts).unwrap_or_else(Utc::now))
         .unwrap_or_else(Utc::now);
+
+    route_to_destinations_async(
+        &state,
+        auth.project_id,
+        &envelope.visitor_id,
+        now,
+        &envelope.request,
+    );
 
     match envelope.request {
         pulse_common::types::CollectRequest::Pageview { payload } => {
@@ -74,7 +119,9 @@ pub async fn collect(
 
             // Extract referrer domain
             let referrer_domain = payload.referrer.as_ref().and_then(|r| {
-                url::Url::parse(r).ok().and_then(|u| u.host_str().map(|h| h.to_string()))
+                url::Url::parse(r)
+                    .ok()
+                    .and_then(|u| u.host_str().map(|h| h.to_string()))
             });
 
             let pageview = BufferedPageview {
@@ -104,12 +151,28 @@ pub async fn collect(
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?;
 
+            if modules::is_module_enabled(&state, auth.project_id, "goals").await? {
+                if let Err(e) = goals::evaluate_pageview_goals(
+                    &state.db,
+                    auth.project_id,
+                    &pageview.path,
+                    &pageview.visitor_id,
+                    session_id,
+                )
+                .await
+                {
+                    tracing::warn!("Failed to evaluate pageview goals: {e}");
+                }
+            }
+
             // Update session counts (fire-and-forget)
             let db = state.db.clone();
             let path = payload.path;
             tokio::spawn(async move {
                 let _ = session::update_session_counts(&db, session_id, true, Some(&path)).await;
             });
+
+            evaluate_alerts_async(&state, auth.project_id);
         }
 
         pulse_common::types::CollectRequest::Event { payload } => {
@@ -139,6 +202,30 @@ pub async fn collect(
                 created_at: now,
             };
 
+            if modules::is_module_enabled(&state, auth.project_id, "governance").await? {
+                let validation = governance::validate_event_payload(
+                    &state.db,
+                    auth.project_id,
+                    &event.visitor_id,
+                    &event.event_name,
+                    event.event_data.as_ref(),
+                    now,
+                )
+                .await?;
+
+                if !validation.accepted {
+                    let message = validation
+                        .violations
+                        .iter()
+                        .map(|violation| violation.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return Err(AppError::BadRequest(format!(
+                        "Event failed tracking plan validation: {message}"
+                    )));
+                }
+            }
+
             ingestion::push_event(&state, &event)
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -147,15 +234,48 @@ pub async fn collect(
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?;
 
+            if modules::is_module_enabled(&state, auth.project_id, "goals").await? {
+                if let Err(e) = goals::evaluate_event_goals(
+                    &state.db,
+                    auth.project_id,
+                    &event.event_name,
+                    event.event_data.as_ref(),
+                    &event.visitor_id,
+                    session_id,
+                    event.revenue_amount,
+                )
+                .await
+                {
+                    tracing::warn!("Failed to evaluate event goals: {e}");
+                }
+            }
+
             let db = state.db.clone();
             tokio::spawn(async move {
                 let _ = session::update_session_counts(&db, session_id, false, None).await;
             });
+
+            evaluate_alerts_async(&state, auth.project_id);
         }
 
-        pulse_common::types::CollectRequest::Identify { payload: _ } => {
-            // Identify is stored as session traits — can be extended later
-            // For now, just acknowledge the request
+        pulse_common::types::CollectRequest::Identify { payload } => {
+            identity::identify_user(
+                &state.db,
+                auth.project_id,
+                &envelope.visitor_id,
+                payload.user_id.as_deref(),
+                &payload.traits,
+                payload.account_id.as_deref(),
+                payload.account_name.as_deref(),
+                payload.account_traits.as_ref(),
+                payload.account_role.as_deref(),
+                now,
+            )
+            .await?;
+
+            ingestion::update_realtime(&state, auth.project_id, &envelope.visitor_id)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
         }
 
         pulse_common::types::CollectRequest::WebVital { payload } => {
@@ -194,6 +314,8 @@ pub async fn collect(
             ingestion::update_realtime(&state, auth.project_id, &envelope.visitor_id)
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            evaluate_alerts_async(&state, auth.project_id);
         }
 
         pulse_common::types::CollectRequest::ScrollDepth { payload } => {
@@ -319,6 +441,12 @@ pub async fn collect(
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
             if modules::is_module_enabled(&state, auth.project_id, "js_errors").await? {
+                let fingerprint = error_tracking::error_fingerprint(
+                    &payload.message,
+                    payload.filename.as_deref(),
+                    payload.lineno,
+                    payload.stack.as_deref(),
+                );
                 let js_error = BufferedJsError {
                     project_id: auth.project_id,
                     visitor_id: envelope.visitor_id.clone(),
@@ -331,10 +459,57 @@ pub async fn collect(
                     path: payload.path,
                     browser: parsed_ua.browser.clone(),
                     os: parsed_ua.os.clone(),
+                    release: payload.release,
+                    environment: payload.environment,
+                    fingerprint,
                     created_at: now,
                 };
 
                 ingestion::push_js_error(&state, &js_error)
+                    .await
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+            }
+
+            ingestion::update_realtime(&state, auth.project_id, &envelope.visitor_id)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            evaluate_alerts_async(&state, auth.project_id);
+        }
+
+        pulse_common::types::CollectRequest::Log { payload } => {
+            let level = error_tracking::normalize_log_level(&payload.level)?;
+            let session_id = session::resolve_session(
+                &state,
+                auth.project_id,
+                &envelope.visitor_id,
+                &parsed_ua,
+                &geo_result,
+                None,
+                None,
+                None,
+                payload.path.as_deref(),
+            )
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            if modules::is_module_enabled(&state, auth.project_id, "logs").await? {
+                let log_entry = BufferedLogEntry {
+                    project_id: auth.project_id,
+                    visitor_id: envelope.visitor_id.clone(),
+                    session_id,
+                    level,
+                    message: payload.message,
+                    body: error_tracking::log_body(payload.body),
+                    path: payload.path,
+                    browser: parsed_ua.browser.clone(),
+                    os: parsed_ua.os.clone(),
+                    release: payload.release,
+                    environment: payload.environment,
+                    created_at: now,
+                };
+
+                ingestion::push_log_entry(&state, &log_entry)
                     .await
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             }
@@ -383,12 +558,153 @@ pub async fn collect(
                 .map_err(|e| AppError::Internal(e.to_string()))?;
         }
 
-        pulse_common::types::CollectRequest::SurveyResponse { payload: _ } => {
-            // SurveyResponse is acknowledged but does not have a dedicated buffer/table yet.
-            // The data is accepted to avoid client-side errors when the module is enabled.
-            // Storage will be implemented when the survey_responses table is created.
+        pulse_common::types::CollectRequest::SessionReplay { payload } => {
+            let started_at = payload
+                .started_at
+                .map(|ts| chrono::DateTime::from_timestamp_millis(ts).unwrap_or(now))
+                .unwrap_or(now);
+
+            let session_id = session::resolve_session(
+                &state,
+                auth.project_id,
+                &envelope.visitor_id,
+                &parsed_ua,
+                &geo_result,
+                payload.screen.as_deref(),
+                None,
+                None,
+                payload.entry_page.as_deref(),
+            )
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            if modules::is_module_enabled(&state, auth.project_id, "session_replay").await? {
+                session_replay::record_replay_events(
+                    &state.db,
+                    auth.project_id,
+                    session_id,
+                    &envelope.visitor_id,
+                    &payload.events,
+                    started_at,
+                    payload.duration_ms,
+                    payload.entry_page.as_deref(),
+                    parsed_ua.browser.as_deref(),
+                    parsed_ua.os.as_deref(),
+                    parsed_ua.device.as_deref(),
+                    geo_result.country.as_deref(),
+                    payload.screen.as_deref(),
+                    payload.is_complete.unwrap_or(false),
+                )
+                .await?;
+            }
+
+            ingestion::update_realtime(&state, auth.project_id, &envelope.visitor_id)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+        }
+
+        pulse_common::types::CollectRequest::SurveyResponse { payload } => {
+            let survey_id = Uuid::parse_str(&payload.survey_id)
+                .map_err(|_| AppError::BadRequest("Invalid survey_id".to_string()))?;
+
+            let session_id = session::resolve_session(
+                &state,
+                auth.project_id,
+                &envelope.visitor_id,
+                &parsed_ua,
+                &geo_result,
+                None,
+                None,
+                None,
+                payload.path.as_deref(),
+            )
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            if modules::is_module_enabled(&state, auth.project_id, "surveys").await? {
+                surveys::record_response(
+                    &state.db,
+                    auth.project_id,
+                    survey_id,
+                    &envelope.visitor_id,
+                    Some(session_id),
+                    &payload.answers,
+                    payload.completed.unwrap_or(true),
+                    payload.path.as_deref(),
+                )
+                .await
+                .map_err(|e| match e {
+                    sqlx::Error::RowNotFound => {
+                        AppError::NotFound("Active survey not found".to_string())
+                    }
+                    other => AppError::Internal(other.to_string()),
+                })?;
+            }
+
+            ingestion::update_realtime(&state, auth.project_id, &envelope.visitor_id)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
         }
     }
 
     Ok(axum::Json(json!({ "ok": true })))
+}
+
+fn evaluate_alerts_async(state: &SharedState, project_id: Uuid) {
+    let state = state.clone();
+    tokio::spawn(async move {
+        match modules::is_module_enabled(&state, project_id, "alerts").await {
+            Ok(true) => alerts::evaluate_alerts(&state, project_id).await,
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Failed to check alerts module before evaluation: {e}"),
+        }
+    });
+}
+
+fn route_to_destinations_async(
+    state: &SharedState,
+    project_id: Uuid,
+    visitor_id: &str,
+    timestamp: chrono::DateTime<Utc>,
+    request: &CollectRequest,
+) {
+    let event_type = collect_event_type(request).to_string();
+    let payload = json!({
+        "event": event_type.clone(),
+        "project_id": project_id,
+        "visitor_id": visitor_id,
+        "timestamp": timestamp.to_rfc3339(),
+        "data": request,
+    });
+    let state = state.clone();
+    tokio::spawn(async move {
+        match modules::is_module_enabled(&state, project_id, "destinations").await {
+            Ok(true) => {
+                if let Err(e) =
+                    destinations::enqueue_event(&state.db, project_id, &event_type, payload).await
+                {
+                    tracing::warn!("Failed to enqueue destination delivery: {e}");
+                }
+            }
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Failed to check destinations module: {e}"),
+        }
+    });
+}
+
+fn collect_event_type(request: &CollectRequest) -> &'static str {
+    match request {
+        CollectRequest::Pageview { .. } => "pageview",
+        CollectRequest::Event { .. } => "event",
+        CollectRequest::Identify { .. } => "identify",
+        CollectRequest::WebVital { .. } => "web_vital",
+        CollectRequest::ScrollDepth { .. } => "scroll_depth",
+        CollectRequest::SearchQuery { .. } => "search_query",
+        CollectRequest::Outlink { .. } => "outlink",
+        CollectRequest::JsError { .. } => "js_error",
+        CollectRequest::Log { .. } => "log",
+        CollectRequest::ClickEvent { .. } => "click_event",
+        CollectRequest::SurveyResponse { .. } => "survey_response",
+        CollectRequest::SessionReplay { .. } => "session_replay",
+    }
 }

@@ -112,22 +112,24 @@ pub async fn get_campaign_stats(
 
     let stats = rows
         .into_iter()
-        .map(|(source, medium, campaign, visitors, sessions, pageviews, bounces)| {
-            let bounce_rate = if sessions > 0 {
-                (bounces as f64 / sessions as f64) * 100.0
-            } else {
-                0.0
-            };
-            CampaignStat {
-                utm_source: source,
-                utm_medium: medium,
-                utm_campaign: campaign,
-                visitors,
-                sessions,
-                pageviews,
-                bounce_rate,
-            }
-        })
+        .map(
+            |(source, medium, campaign, visitors, sessions, pageviews, bounces)| {
+                let bounce_rate = if sessions > 0 {
+                    (bounces as f64 / sessions as f64) * 100.0
+                } else {
+                    0.0
+                };
+                CampaignStat {
+                    utm_source: source,
+                    utm_medium: medium,
+                    utm_campaign: campaign,
+                    visitors,
+                    sessions,
+                    pageviews,
+                    bounce_rate,
+                }
+            },
+        )
         .collect();
 
     Ok(stats)

@@ -171,9 +171,7 @@ pub async fn analyze_funnel(
                 row.0
             }
             other => {
-                return Err(AppError::BadRequest(format!(
-                    "Unknown step type: {other}"
-                )));
+                return Err(AppError::BadRequest(format!("Unknown step type: {other}")));
             }
         };
 

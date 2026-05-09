@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pulse Analytics — Privacy-First, Modular Web Analytics</title>
-  <meta name="description" content="Self-hosted, cookie-free web analytics with 23 configurable modules. From pageviews to A/B testing, funnels, and session replay. Built with Rust." />
+  <title>Pulse Analytics — Production-Grade, Privacy-First Web Analytics</title>
+  <meta name="description" content="Production-grade, self-hosted web analytics with 33 modules, AI analytics, BI layer, custom dashboards, integration catalog, source collection, destination routing, feature flags, privacy controls, event governance, release-aware error/log analytics, signed alerts, scheduled reports, identity, segmentation, A/B testing, funnels, and session replay. Built with Rust." />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -104,6 +104,123 @@
     .module-panel { display: none; }
     .module-panel.active { display: grid; }
     html { scroll-padding-top: 80px; }
+    .hero-scene {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(2, 6, 23, 0.12), rgba(2, 6, 23, 0.82)),
+        #020617;
+    }
+    .hero-scene::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95), rgba(0,0,0,0.2));
+    }
+    .scene-panel {
+      position: absolute;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(15, 23, 42, 0.62);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 24px 70px rgba(2, 6, 23, 0.38);
+      opacity: 0.42;
+    }
+    .scene-panel-main {
+      width: min(820px, 82vw);
+      height: 330px;
+      left: 50%;
+      top: 61%;
+      transform: translate(-50%, -50%) rotate(-1deg);
+      border-radius: 18px;
+      padding: 24px;
+    }
+    .scene-panel-side {
+      width: 270px;
+      height: 210px;
+      right: max(24px, 7vw);
+      top: 25%;
+      border-radius: 16px;
+      padding: 18px;
+      opacity: 0.34;
+    }
+    .scene-panel-feed {
+      width: 300px;
+      height: 230px;
+      left: max(24px, 6vw);
+      bottom: 9%;
+      border-radius: 16px;
+      padding: 18px;
+      opacity: 0.32;
+    }
+    .scene-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .scene-kpi,
+    .scene-feed-row {
+      background: rgba(2, 6, 23, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 10px;
+    }
+    .scene-kpi {
+      height: 68px;
+      padding: 12px;
+    }
+    .scene-kpi span,
+    .scene-feed-row span {
+      display: block;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.28);
+    }
+    .scene-kpi strong {
+      display: block;
+      width: 58%;
+      height: 16px;
+      margin-top: 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    .scene-chart {
+      display: grid;
+      grid-template-columns: repeat(18, minmax(0, 1fr));
+      align-items: end;
+      gap: 8px;
+      height: 145px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .scene-bar {
+      border-radius: 999px 999px 4px 4px;
+      background: linear-gradient(180deg, #22c55e, #6366f1);
+      animation: bar-grow 1.2s ease-out both;
+      opacity: 0.82;
+    }
+    .scene-side-line {
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.22);
+      margin-bottom: 12px;
+    }
+    .scene-side-line:nth-child(2n) { width: 72%; }
+    .scene-side-line:nth-child(3n) { width: 88%; background: rgba(99, 102, 241, 0.42); }
+    .scene-feed-row {
+      height: 40px;
+      margin-bottom: 10px;
+      padding: 12px;
+    }
+    @media (max-width: 768px) {
+      .scene-panel-main { width: 720px; left: 62%; top: 58%; opacity: 0.26; }
+      .scene-panel-side, .scene-panel-feed { display: none; }
+      .hero-scene::before { background-size: 36px 36px; }
+    }
   </style>
 </head>
 <body class="bg-white text-slate-800 antialiased">
@@ -126,6 +243,7 @@
         <div class="hidden md:flex items-center gap-8">
           <a href="#features" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Features</a>
           <a href="#modules" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Modules</a>
+          <a href="#platform" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Platform</a>
           <a href="/api/docs" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Docs</a>
           <a href="#pricing" class="text-sm font-medium text-slate-300 hover:text-white transition-colors">Pricing</a>
         </div>
@@ -149,6 +267,7 @@
         <div class="flex flex-col gap-3 pt-2">
           <a href="#features" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Features</a>
           <a href="#modules" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Modules</a>
+          <a href="#platform" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Platform</a>
           <a href="/api/docs" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Docs</a>
           <a href="#pricing" class="text-sm font-medium text-slate-300 hover:text-white transition-colors py-2">Pricing</a>
           <div class="flex gap-3 pt-2">
@@ -161,13 +280,51 @@
   </nav>
 
   <!-- Hero Section -->
-  <section class="relative min-h-screen flex items-center bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 overflow-hidden">
-    <!-- Background decoration -->
-    <div class="absolute inset-0 overflow-hidden">
-      <div class="absolute -top-1/2 -right-1/4 w-[800px] h-[800px] rounded-full bg-gradient-to-br from-pulse-500/10 to-transparent blur-3xl"></div>
-      <div class="absolute -bottom-1/4 -left-1/4 w-[600px] h-[600px] rounded-full bg-gradient-to-tr from-pulse-600/8 to-transparent blur-3xl"></div>
-      <!-- Grid pattern -->
-      <div class="absolute inset-0" style="background-image: radial-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px); background-size: 40px 40px;"></div>
+  <section class="relative min-h-screen flex items-center bg-slate-950 overflow-hidden">
+    <!-- Immersive analytics scene -->
+    <div class="hero-scene" aria-hidden="true">
+      <div class="scene-panel scene-panel-main">
+        <div class="scene-kpi-grid">
+          <div class="scene-kpi"><span style="width:44%"></span><strong></strong></div>
+          <div class="scene-kpi"><span style="width:52%"></span><strong style="width:68%"></strong></div>
+          <div class="scene-kpi"><span style="width:38%"></span><strong style="width:50%"></strong></div>
+          <div class="scene-kpi"><span style="width:58%"></span><strong style="width:62%"></strong></div>
+        </div>
+        <div class="scene-chart">
+          <div class="scene-bar" style="height:42%; animation-delay:0.05s"></div>
+          <div class="scene-bar" style="height:58%; animation-delay:0.1s"></div>
+          <div class="scene-bar" style="height:47%; animation-delay:0.15s"></div>
+          <div class="scene-bar" style="height:66%; animation-delay:0.2s"></div>
+          <div class="scene-bar" style="height:73%; animation-delay:0.25s"></div>
+          <div class="scene-bar" style="height:61%; animation-delay:0.3s"></div>
+          <div class="scene-bar" style="height:79%; animation-delay:0.35s"></div>
+          <div class="scene-bar" style="height:84%; animation-delay:0.4s"></div>
+          <div class="scene-bar" style="height:71%; animation-delay:0.45s"></div>
+          <div class="scene-bar" style="height:92%; animation-delay:0.5s"></div>
+          <div class="scene-bar" style="height:76%; animation-delay:0.55s"></div>
+          <div class="scene-bar" style="height:88%; animation-delay:0.6s"></div>
+          <div class="scene-bar" style="height:69%; animation-delay:0.65s"></div>
+          <div class="scene-bar" style="height:80%; animation-delay:0.7s"></div>
+          <div class="scene-bar" style="height:95%; animation-delay:0.75s"></div>
+          <div class="scene-bar" style="height:86%; animation-delay:0.8s"></div>
+          <div class="scene-bar" style="height:98%; animation-delay:0.85s"></div>
+          <div class="scene-bar" style="height:90%; animation-delay:0.9s"></div>
+        </div>
+      </div>
+      <div class="scene-panel scene-panel-side">
+        <div class="scene-side-line" style="width:58%"></div>
+        <div class="scene-side-line"></div>
+        <div class="scene-side-line"></div>
+        <div class="scene-side-line" style="width:46%"></div>
+        <div class="scene-side-line"></div>
+        <div class="scene-side-line" style="width:78%"></div>
+      </div>
+      <div class="scene-panel scene-panel-feed">
+        <div class="scene-feed-row"><span style="width:64%"></span></div>
+        <div class="scene-feed-row"><span style="width:82%"></span></div>
+        <div class="scene-feed-row"><span style="width:58%"></span></div>
+        <div class="scene-feed-row"><span style="width:76%"></span></div>
+      </div>
     </div>
 
     <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20">
@@ -179,13 +336,11 @@
         </div>
 
         <h1 class="hero-animate text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight tracking-tight">
-          Privacy-First Analytics That
-          <span class="text-transparent bg-clip-text bg-gradient-to-r from-pulse-400 to-purple-400"> Don't Compromise</span>
-          on Power
+          Pulse Analytics
         </h1>
 
         <p class="hero-animate-delay mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
-          23 configurable modules. Self-hosted. Cookie-free. From simple pageviews to A/B testing, funnels, and session replay &mdash; enable only what you need.
+          Production-grade, self-hosted analytics with 33 modules, AI analytics, BI layer, custom dashboards, integration catalog, source collection, destination routing, feature flags, event governance, release-aware error/log analytics, signed alert webhooks, scheduled reports, DSAR workflows, identity, segmentation, A/B testing, funnels, and privacy-masked session replay.
         </p>
 
         <!-- CTA Buttons -->
@@ -299,7 +454,7 @@
             <p class="text-sm text-slate-500 mt-1">API Endpoints</p>
           </div>
           <div class="text-center">
-            <p class="text-3xl font-bold text-white">23</p>
+            <p class="text-3xl font-bold text-white">27</p>
             <p class="text-sm text-slate-500 mt-1">Modules</p>
           </div>
           <div class="text-center">
@@ -378,6 +533,56 @@
     </div>
   </section>
 
+  <!-- Production Readiness -->
+  <section id="platform" class="py-20 sm:py-24 bg-slate-950">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid lg:grid-cols-[0.9fr_1.1fr] gap-12 items-start">
+        <div class="animate-on-scroll">
+          <p class="text-sm font-semibold text-pulse-300 uppercase tracking-wider">Production platform</p>
+          <h2 class="mt-3 text-3xl sm:text-4xl font-bold text-white">Built for teams that need more than traffic charts</h2>
+          <p class="mt-5 text-slate-400 leading-relaxed">
+            Pulse now covers the operational layer around analytics: controlled module access, custom dashboards, lifecycle and activation insights, source collection, destination routing with dead letters, safe query explorer runs, consent-aware ingestion, release-aware errors and logs, bot filtering, privacy exports and deletes, audit history, signed alert delivery, report scheduling, and typed SDK workflows.
+          </p>
+          <div class="mt-8 flex flex-col sm:flex-row gap-3">
+            <a href="/api/docs#privacy" class="px-5 py-3 text-sm font-semibold text-slate-950 bg-white rounded-lg hover:bg-slate-100 transition-colors text-center">Review Privacy APIs</a>
+            <a href="/api/docs#alerts" class="px-5 py-3 text-sm font-semibold text-white border border-slate-700 rounded-lg hover:bg-white/5 transition-colors text-center">Configure Alerts</a>
+          </div>
+        </div>
+
+        <div class="animate-on-scroll delay-200 grid sm:grid-cols-2 gap-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-300 flex items-center justify-center text-sm font-bold">01</span>
+              <h3 class="font-semibold text-white">Runtime Foundation</h3>
+            </div>
+            <p class="text-sm text-slate-400 leading-relaxed">Latest stable Rust, Node, PostgreSQL, Redis, Debian, and SDK build tooling with refreshed lockfiles and compose definitions.</p>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-300 flex items-center justify-center text-sm font-bold">02</span>
+              <h3 class="font-semibold text-white">Privacy Controls</h3>
+            </div>
+            <p class="text-sm text-slate-400 leading-relaxed">Runtime consent gates, DNT/Sec-GPC handling, bot filtering, IP anonymization, visitor export/delete endpoints, and audit logs.</p>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-lg bg-pulse-500/10 text-pulse-300 flex items-center justify-center text-sm font-bold">03</span>
+              <h3 class="font-semibold text-white">Notification Delivery</h3>
+            </div>
+            <p class="text-sm text-slate-400 leading-relaxed">Alert rules validate metrics and channels, then post signed webhook payloads when thresholds are crossed.</p>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <div class="flex items-center gap-3 mb-3">
+              <span class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-300 flex items-center justify-center text-sm font-bold">04</span>
+              <h3 class="font-semibold text-white">Operational Reporting</h3>
+            </div>
+            <p class="text-sm text-slate-400 leading-relaxed">Scheduled email report configs, test sends, and normalized delivery webhook payloads for digest pipelines.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Features Grid -->
   <section id="features" class="py-20 sm:py-28 bg-slate-50">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -406,7 +611,7 @@
             </svg>
           </div>
           <h3 class="text-xl font-semibold text-slate-900 mb-2">Modular Architecture</h3>
-          <p class="text-slate-500 leading-relaxed">23 configurable modules &mdash; enable funnels, A/B testing, heatmaps, or just basic pageviews. Each module is read/write/all configurable.</p>
+          <p class="text-slate-500 leading-relaxed">33 configurable modules &mdash; enable BI, integrations, sources, destinations, dashboards, feature flags, governance, identity, segments, funnels, A/B testing, heatmaps, or just basic pageviews. Each module is read/write/all configurable.</p>
         </div>
 
         <!-- Real-Time Analytics -->
@@ -450,7 +655,7 @@
             </svg>
           </div>
           <h3 class="text-xl font-semibold text-slate-900 mb-2">TypeScript SDK</h3>
-          <p class="text-slate-500 leading-relaxed">Client and server SDKs with full type safety. Auto-tracking for SPAs. sendBeacon for reliability. Framework agnostic.</p>
+          <p class="text-slate-500 leading-relaxed">Client, server, React, Vue, Next.js, and React Native SDK helpers with full type safety. Auto-tracking for SPAs. sendBeacon for reliability.</p>
         </div>
       </div>
     </div>
@@ -461,7 +666,7 @@
     <div class="absolute inset-0" style="background-image: radial-gradient(rgba(99, 102, 241, 0.06) 1px, transparent 1px); background-size: 32px 32px;"></div>
     <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="text-center mb-12">
-        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-white">23 Modules. Enable What You Need.</h2>
+        <h2 class="animate-on-scroll text-3xl sm:text-4xl font-bold text-white">27 Modules. Enable What You Need.</h2>
         <p class="animate-on-scroll delay-100 mt-4 text-lg text-slate-400 max-w-2xl mx-auto">Each module can be independently enabled, disabled, or set to read-only. Pay no performance cost for features you don't use.</p>
       </div>
 
@@ -477,10 +682,17 @@
       <div id="panel-tracking" class="module-panel active grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
           <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Core Analytics</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Pageviews, sessions, visitors, referrers, devices, locations, events, and real-time activity.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
+          <div class="flex items-center justify-between mb-3">
             <h4 class="font-semibold text-white text-sm">UTM/Campaign Tracking</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">Parse and report on utm_source, utm_medium, utm_campaign parameters automatically.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">Parse UTM parameters, group channels, compare attribution models, import GA/Search Console/Ads exports, and detect AI referrers.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
           <div class="flex items-center justify-between mb-3">
@@ -501,7 +713,7 @@
             <h4 class="font-semibold text-white text-sm">Revenue Tracking</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">Attach revenue values to events. Track MRR, ARPU, and conversion value by source.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">Attach revenue values to events. Track ecommerce revenue, AOV, products, and value by source.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
           <div class="flex items-center justify-between mb-3">
@@ -519,17 +731,17 @@
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
           <div class="flex items-center justify-between mb-3">
-            <h4 class="font-semibold text-white text-sm">Error Tracking</h4>
+            <h4 class="font-semibold text-white text-sm">Errors &amp; Logs</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">JS errors with stack traces, automatic grouping, and frequency analysis.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">JS errors and application logs with release tags, source-map artifacts, grouping, and frequency analysis.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all group">
           <div class="flex items-center justify-between mb-3">
             <h4 class="font-semibold text-white text-sm">Click Heatmaps</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">Record click coordinates for heatmap visualization. Understand where users click.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">Record clicks, visualize hot spots, label selectors as events, and detect rage-click friction patterns.</p>
         </div>
       </div>
 
@@ -551,6 +763,34 @@
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Identity</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Persist user IDs, aliases, traits, SCIM users and groups, account memberships, identity graphs, and company analytics.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Segments</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Save reusable behavioral and identity-based visitor segments, then compare and break them down.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Custom Dashboards</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Persist dashboard layouts, saved reports, query explorer runs, and product lifecycle insights.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">BI Layer</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Safe SQL, white-label embeds, external Postgres connections, semantic metrics, row policies, visual queries, drill-through detail rows, query history, and CSV uploads.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
             <h4 class="font-semibold text-white text-sm">Retention</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
@@ -563,7 +803,7 @@
           </div>
           <p class="text-xs text-slate-400 leading-relaxed">Group users by acquisition date or source and track behavior over time.</p>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all lg:col-start-2">
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
             <h4 class="font-semibold text-white text-sm">Path Analysis</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
@@ -580,6 +820,27 @@
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
           <p class="text-xs text-slate-400 leading-relaxed">Download any report as CSV. Export pageviews, events, funnels, and more.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Integrations</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Discover available and planned SDK, mobile, framework, source, destination, BI, and marketing integrations.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Sources</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Create source tokens, collect external JSON events, audit ingestions, and route them onward.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Destinations</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Route and transform collected events to webhook destinations with retries, signatures, health, and dead letters.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
@@ -600,7 +861,14 @@
             <h4 class="font-semibold text-white text-sm">Alerts</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">Threshold-based metric alerting. Get notified when traffic spikes or drops.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">Threshold-based metric alerting with signed webhook notifications.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Governance</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Tracking plans, approved event schemas, data dictionary, and quality violations from ingestion.</p>
         </div>
       </div>
 
@@ -608,10 +876,17 @@
       <div id="panel-advanced" class="module-panel grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
+            <h4 class="font-semibold text-white text-sm">Feature Flags</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">Targeted flags, remote config, stable percentage rollouts, variants, and experiment-backed evaluation.</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-3">
             <h4 class="font-semibold text-white text-sm">A/B Testing</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">Run experiments with weighted variants. Statistical significance tracking built in.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">Run weighted experiments with goal conversions, lift, confidence, p-values, and winner detection.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
@@ -622,17 +897,17 @@
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
-            <h4 class="font-semibold text-white text-sm">Surveys</h4>
+            <h4 class="font-semibold text-white text-sm">Surveys &amp; Guides</h4>
             <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">In-app surveys with targeting rules. Collect qualitative feedback alongside quantitative data.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">In-app surveys, product tours, onboarding guides, tooltips, NPS scoring, and feedback sentiment.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-3">
-            <h4 class="font-semibold text-white text-sm">AI Queries</h4>
-            <div class="w-10 h-5 rounded-full bg-slate-600 relative"><div class="w-4 h-4 rounded-full bg-slate-400 absolute left-0.5 top-0.5 shadow"></div></div>
+            <h4 class="font-semibold text-white text-sm">AI &amp; LLM Analytics</h4>
+            <div class="w-10 h-5 rounded-full bg-pulse-500 relative"><div class="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow"></div></div>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">Natural language analytics queries. Ask questions in plain English. <span class="text-pulse-400 text-xs font-medium">Coming soon</span></p>
+          <p class="text-xs text-slate-400 leading-relaxed">Natural-language answers, generated insights, query history, LLM traces, generations, evals, and cost metrics.</p>
         </div>
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-pulse-500/30 transition-all lg:col-start-2">
           <div class="flex items-center justify-between mb-3">
@@ -815,14 +1090,14 @@
               <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
             </tr>
             <tr class="hover:bg-slate-50 transition-colors">
-              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Error Tracking</td>
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Errors &amp; Logs</td>
               <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
               <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
               <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
               <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
             </tr>
             <tr class="hover:bg-slate-50 transition-colors">
-              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Surveys</td>
+              <td class="py-3.5 px-6 text-sm text-slate-700 font-medium">Surveys &amp; Guides</td>
               <td class="py-3.5 px-4 text-center bg-pulse-50/50"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
               <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></td>
               <td class="py-3.5 px-4 text-center"><svg class="w-5 h-5 mx-auto text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></td>
@@ -881,6 +1156,48 @@
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Identity</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">18</span>
+          </div>
+          <p class="text-xs text-slate-500">User profiles, aliases, identity graph, SCIM users and groups, accounts, memberships, and account analytics</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Segments</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">8</span>
+          </div>
+          <p class="text-xs text-slate-500">Saved segments, evaluation, comparison, and visitor breakdowns</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Product Workspace</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">17</span>
+          </div>
+          <p class="text-xs text-slate-500">Dashboards, saved reports, query explorer, lifecycle, activation, stickiness, impact</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">BI Layer</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">18</span>
+          </div>
+          <p class="text-xs text-slate-500">White-label embeds, external connections, semantic metrics, row policies, saved SQL, visual queries, drill-through, query runs, CSV uploads</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Governance</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">17</span>
+          </div>
+          <p class="text-xs text-slate-500">Tracking plans, event schemas, approval status, dictionary, violations, health</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Feature Flags</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">12</span>
+          </div>
+          <p class="text-xs text-slate-500">Flags, rollout evaluation, evaluation history, remote config, targeting</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
             <h4 class="font-semibold text-white text-sm">Funnels</h4>
             <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">6</span>
           </div>
@@ -902,6 +1219,13 @@
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Marketing</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">4</span>
+          </div>
+          <p class="text-xs text-slate-500">Channel groups, attribution models, ecommerce revenue, GA/Search Console/Ads imports, AI referrers</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
             <h4 class="font-semibold text-white text-sm">Web Vitals</h4>
             <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">3</span>
           </div>
@@ -909,24 +1233,31 @@
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
-            <h4 class="font-semibold text-white text-sm">Error Tracking</h4>
-            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">4</span>
+            <h4 class="font-semibold text-white text-sm">Errors &amp; Logs</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">11</span>
           </div>
-          <p class="text-xs text-slate-500">List errors, error groups, error details, resolve errors</p>
+          <p class="text-xs text-slate-500">Error groups, releases, source maps, log search, log stats</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Session Replay</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">2</span>
+          </div>
+          <p class="text-xs text-slate-500">Replay recording list and event-stream playback APIs</p>
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
             <h4 class="font-semibold text-white text-sm">A/B Testing</h4>
             <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">7</span>
           </div>
-          <p class="text-xs text-slate-500">Experiments CRUD, variants, results, statistical significance</p>
+          <p class="text-xs text-slate-500">Experiments CRUD, stable assignment, goal results, lift, confidence, p-values</p>
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
-            <h4 class="font-semibold text-white text-sm">Surveys</h4>
-            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">8</span>
+            <h4 class="font-semibold text-white text-sm">Surveys &amp; Guides</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">21</span>
           </div>
-          <p class="text-xs text-slate-500">Create, target, collect, analyze survey responses</p>
+          <p class="text-xs text-slate-500">Surveys, NPS, feedback sentiment, guides, tooltips, tours, onboarding analytics</p>
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
@@ -937,10 +1268,38 @@
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
           <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Integrations</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">2</span>
+          </div>
+          <p class="text-xs text-slate-500">Catalog, filtering, setup metadata, SDK helpers, source and destination listings</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Sources</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">7</span>
+          </div>
+          <p class="text-xs text-slate-500">Source catalog, source tokens, webhook ingest, ingestion audit, destination fanout</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Destinations</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">8</span>
+          </div>
+          <p class="text-xs text-slate-500">Event routing, transforms, delivery outbox, retry controls, dead letters, destination health</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-white text-sm">Email Reports</h4>
+            <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">5</span>
+          </div>
+          <p class="text-xs text-slate-500">Scheduled report CRUD and test-send delivery webhook</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all">
+          <div class="flex items-center justify-between mb-2">
             <h4 class="font-semibold text-white text-sm">Alerts</h4>
             <span class="text-xs font-mono text-pulse-400 bg-pulse-500/10 px-2 py-0.5 rounded-full">5</span>
           </div>
-          <p class="text-xs text-slate-500">Create, list, update, delete, test alert rules</p>
+          <p class="text-xs text-slate-500">Create, list, update, delete, toggle, and deliver alert webhooks</p>
         </div>
         <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 hover:border-pulse-500/30 transition-all sm:col-span-2 lg:col-span-1">
           <div class="flex items-center justify-between mb-2">
@@ -982,7 +1341,7 @@
           <ul class="text-left space-y-3 mb-8">
             <li class="flex items-center gap-3 text-slate-300 text-sm">
               <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-              All 23 modules included
+              All 33 modules included
             </li>
             <li class="flex items-center gap-3 text-slate-300 text-sm">
               <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>

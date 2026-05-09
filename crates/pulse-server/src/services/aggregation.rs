@@ -24,13 +24,15 @@ pub fn start_rollup_task(state: Arc<AppState>) {
             let now = Utc::now();
             // Next run at 00:05 UTC tomorrow
             let tomorrow = (now + Duration::days(1)).date_naive();
-            let next_run = tomorrow
-                .and_hms_opt(0, 5, 0)
-                .expect("valid time")
-                .and_utc();
-            let sleep_duration = (next_run - now).to_std().unwrap_or(std::time::Duration::from_secs(3600));
+            let next_run = tomorrow.and_hms_opt(0, 5, 0).expect("valid time").and_utc();
+            let sleep_duration = (next_run - now)
+                .to_std()
+                .unwrap_or(std::time::Duration::from_secs(3600));
 
-            info!("Next rollup scheduled at {next_run} (sleeping {}s)", sleep_duration.as_secs());
+            info!(
+                "Next rollup scheduled at {next_run} (sleeping {}s)",
+                sleep_duration.as_secs()
+            );
             time::sleep(sleep_duration).await;
 
             let target_date = (Utc::now() - Duration::days(1)).date_naive();
@@ -245,6 +247,7 @@ async fn compute_daily_campaigns(db: &PgPool, date: NaiveDate) -> Result<(), any
 }
 
 /// Manually trigger rollup for a specific date (used by admin endpoint).
+#[allow(dead_code)]
 pub async fn trigger_rollup(db: &PgPool, date: NaiveDate) -> Result<(), anyhow::Error> {
     compute_all_rollups(db, date).await
 }

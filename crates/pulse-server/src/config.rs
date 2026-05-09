@@ -18,6 +18,7 @@ pub struct Config {
     pub rate_limit_per_second: u32,
     pub data_retention_days: u32,
     pub cookie_secret: String,
+    pub email_report_webhook_url: Option<String>,
 }
 
 impl Config {
@@ -60,14 +61,16 @@ impl Config {
                 .parse()
                 .unwrap_or(365),
             cookie_secret: env::var("PULSE_COOKIE_SECRET").unwrap_or_else(|_| {
-                use rand::Rng;
-                let secret: String = rand::thread_rng()
-                    .sample_iter(&rand::distributions::Alphanumeric)
+                use rand::{distr::Alphanumeric, RngExt};
+                let mut rng = rand::rng();
+                let secret: String = (&mut rng)
+                    .sample_iter(Alphanumeric)
                     .take(64)
                     .map(char::from)
                     .collect();
                 secret
             }),
+            email_report_webhook_url: env::var("EMAIL_REPORT_WEBHOOK_URL").ok(),
         }
     }
 

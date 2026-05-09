@@ -9,6 +9,10 @@
   // Feature flags from data attributes (all default on except heavy ones)
   const cfg = {
     respectDnt: s.getAttribute("data-dnt") !== "false",
+    consentMode: s.getAttribute("data-consent-mode") || "analytics",
+    consentGranted: s.getAttribute("data-consent-granted") !== "false",
+    release: s.getAttribute("data-release") || "",
+    environment: s.getAttribute("data-environment") || "production",
     trackUtm: s.getAttribute("data-utm") !== "false",
     trackScrollDepth: s.getAttribute("data-scroll") === "true",
     trackWebVitals: s.getAttribute("data-vitals") === "true",
@@ -16,6 +20,9 @@
     trackErrors: s.getAttribute("data-errors") === "true",
     trackClicks: s.getAttribute("data-clicks") === "true",
     trackSearch: s.getAttribute("data-search") === "true",
+    trackSessionReplay: s.getAttribute("data-replay") === "true",
+    sessionReplaySampleRate: Number(s.getAttribute("data-replay-sample") || "1"),
+    maskReplayText: s.getAttribute("data-replay-mask") !== "false",
     searchParam: s.getAttribute("data-search-param") || "q",
   };
 
@@ -46,7 +53,13 @@
   } catch {}
 
   function send(type: string, payload: Record<string, unknown>) {
-    const body = JSON.stringify({ type, payload, visitor_id: vid });
+    const body = JSON.stringify({
+      type,
+      payload,
+      visitor_id: vid,
+      consent_mode: cfg.consentMode,
+      consent_granted: cfg.consentGranted,
+    });
     if (navigator.sendBeacon) {
       navigator.sendBeacon(e + "?key=" + k, body);
     } else {
@@ -56,6 +69,20 @@
         body,
         keepalive: true,
       });
+    }
+  }
+
+  function selector(target: Element | null): string {
+    if (!target) return "";
+    try {
+      let sel = target.tagName?.toLowerCase() || "";
+      if (target.id) sel += "#" + target.id;
+      else if (target.className && typeof target.className === "string") {
+        sel += "." + target.className.trim().split(/\s+/).slice(0, 2).join(".");
+      }
+      return sel;
+    } catch {
+      return "";
     }
   }
 
@@ -251,6 +278,8 @@
         colno: ev.colno,
         stack: ev.error?.stack,
         path: location.pathname,
+        release: cfg.release || undefined,
+        environment: cfg.environment,
       });
     });
     window.addEventListener("unhandledrejection", (ev) => {
@@ -259,6 +288,8 @@
         message: reason?.message || String(reason) || "Unhandled promise rejection",
         stack: reason?.stack,
         path: location.pathname,
+        release: cfg.release || undefined,
+        environment: cfg.environment,
       });
     });
   }
@@ -266,29 +297,93 @@
   // --- Click Heatmap Tracking ---
   if (cfg.trackClicks) {
     document.addEventListener("click", (ev) => {
-      const target = ev.target as Element;
-      let selector = "";
-      try {
-        selector = target.tagName?.toLowerCase() || "";
-        if (target.id) selector += "#" + target.id;
-        else if (target.className && typeof target.className === "string") {
-          selector += "." + target.className.trim().split(/\s+/).slice(0, 2).join(".");
-        }
-      } catch {}
       send("click_event", {
         path: location.pathname,
         x: ev.clientX / window.innerWidth,
         y: (ev.clientY + window.scrollY) / Math.max(document.documentElement.scrollHeight, 1),
-        element_selector: selector,
+        element_selector: selector(ev.target as Element | null),
         viewport_width: window.innerWidth,
         viewport_height: window.innerHeight,
       });
     });
   }
 
+  // --- Session Replay ---
+  if (cfg.trackSessionReplay) {
+    const sampleRate = Math.max(0, Math.min(1, cfg.sessionReplaySampleRate || 1));
+    if (sampleRate > 0 && Math.random() <= sampleRate) {
+      const startedAt = Date.now();
+      let events: Record<string, unknown>[] = [];
+      let flushTimer: ReturnType<typeof setInterval> | undefined;
+      const record = (type: string, data: Record<string, unknown>) => {
+        events.push({ type, t: Date.now() - startedAt, ...data });
+        if (events.length >= 50) flush(false);
+      };
+      const flush = (isComplete: boolean) => {
+        if (events.length === 0 && !isComplete) return;
+        const batch = events;
+        events = [];
+        send("session_replay", {
+          events: batch,
+          started_at: startedAt,
+          duration_ms: Date.now() - startedAt,
+          entry_page: location.pathname,
+          screen: screen.width + "x" + screen.height,
+          is_complete: isComplete,
+        });
+        if (isComplete && flushTimer) clearInterval(flushTimer);
+      };
+
+      record("page", {
+        path: location.pathname + location.search,
+        title: document.title,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      document.addEventListener("click", (ev) => {
+        record("click", {
+          selector: selector(ev.target as Element | null),
+          x: ev.clientX / window.innerWidth,
+          y: (ev.clientY + window.scrollY) / Math.max(document.documentElement.scrollHeight, 1),
+        });
+      }, true);
+      document.addEventListener("input", (ev) => {
+        const target = ev.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+        if (!target) return;
+        const value = "value" in target && typeof target.value === "string" ? target.value : "";
+        record("input", {
+          selector: selector(target),
+          masked: cfg.maskReplayText,
+          value_length: cfg.maskReplayText ? value.length : undefined,
+          value: cfg.maskReplayText ? undefined : value,
+        });
+      }, true);
+      let lastScroll = 0;
+      window.addEventListener("scroll", () => {
+        const now = Date.now();
+        if (now - lastScroll < 250) return;
+        lastScroll = now;
+        record("scroll", {
+          x: window.scrollX,
+          y: window.scrollY,
+          max_y: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+        });
+      }, { passive: true });
+      window.addEventListener("visibilitychange", () => {
+        record("visibility", { state: document.visibilityState });
+        if (document.visibilityState === "hidden") flush(false);
+      });
+      window.addEventListener("beforeunload", () => flush(true));
+      flushTimer = setInterval(() => flush(false), 5000);
+    }
+  }
+
   // --- Public API ---
   (window as any).pulse = function (action: string, ...args: any[]) {
-    if (action === "event" && args[0]) {
+    if (action === "consent") {
+      cfg.consentGranted = args[0] !== false;
+      cfg.consentMode = args[1] || cfg.consentMode;
+    } else if (action === "event" && args[0]) {
       const eventPayload: Record<string, unknown> = {
         name: args[0],
         data: args[1] || {},
@@ -301,12 +396,25 @@
       }
       send("event", eventPayload);
     } else if (action === "identify" && args[0]) {
-      send("identify", { traits: args[0] });
+      if (typeof args[0] === "string") {
+        send("identify", { user_id: args[0], traits: args[1] || {} });
+      } else {
+        send("identify", { traits: args[0] });
+      }
     } else if (action === "search" && args[0]) {
       send("search_query", {
         query: args[0],
         results_count: args[1],
         path: location.pathname,
+      });
+    } else if (action === "log" && args[0] && args[1]) {
+      send("log", {
+        level: args[0],
+        message: args[1],
+        body: args[2] || {},
+        path: location.pathname,
+        release: cfg.release || undefined,
+        environment: cfg.environment,
       });
     } else if (action === "survey_response" && args[0]) {
       send("survey_response", {

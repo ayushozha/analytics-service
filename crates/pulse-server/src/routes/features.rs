@@ -258,13 +258,8 @@ pub async fn list_goals(
     auth: AuthenticatedProject,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "goals",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "goals", &auth.allowed_modules)
+        .await?;
 
     let goals = services::goals::list_goals(&state.db, auth.project_id).await?;
     Ok(axum::Json(json!({ "data": goals })))
@@ -304,13 +299,8 @@ pub async fn get_goal(
     Path(goal_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "goals",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "goals", &auth.allowed_modules)
+        .await?;
 
     let goal = services::goals::get_goal(&state.db, auth.project_id, goal_id)
         .await?
@@ -376,13 +366,8 @@ pub async fn get_goal_stats(
     Query(params): Query<DateRangeQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "goals",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "goals", &auth.allowed_modules)
+        .await?;
 
     let stats = services::goals::get_goal_stats(
         &state.db,
@@ -464,13 +449,8 @@ pub async fn get_paths(
     Query(params): Query<PathsQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "paths",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "paths", &auth.allowed_modules)
+        .await?;
 
     let data = services::paths::get_page_flows(
         &state.db,
@@ -495,13 +475,8 @@ pub async fn get_campaigns(
     Query(params): Query<DateRangeQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "utm",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "utm", &auth.allowed_modules)
+        .await?;
 
     let data = services::campaigns::get_campaign_stats(
         &state.db,
@@ -521,13 +496,8 @@ pub async fn get_sources(
     Query(params): Query<PaginatedDateQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "utm",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "utm", &auth.allowed_modules)
+        .await?;
 
     let data = services::campaigns::get_sources(
         &state.db,
@@ -549,13 +519,8 @@ pub async fn get_mediums(
     Query(params): Query<PaginatedDateQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "utm",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "utm", &auth.allowed_modules)
+        .await?;
 
     let data = services::campaigns::get_mediums(
         &state.db,
@@ -577,13 +542,8 @@ pub async fn get_campaign_timeseries(
     Query(params): Query<CampaignTimeseriesQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        "utm",
-        &auth.allowed_modules,
-    )
-    .await?;
+    services::modules::require_module_read(&state, auth.project_id, "utm", &auth.allowed_modules)
+        .await?;
 
     let data = services::campaigns::get_campaign_timeseries(
         &state.db,

@@ -146,8 +146,8 @@ fn generate_cohort_dates(
         }
         "monthly" => {
             // Align to first of month
-            current = NaiveDate::from_ymd_opt(current.year(), current.month(), 1)
-                .unwrap_or(current);
+            current =
+                NaiveDate::from_ymd_opt(current.year(), current.month(), 1).unwrap_or(current);
             while current <= end {
                 dates.push(current);
                 // Move to first of next month
@@ -179,12 +179,9 @@ fn cohort_window(date: NaiveDate, period: &str) -> AppResult<(NaiveDate, NaiveDa
             } else {
                 (date.year(), date.month() + 1)
             };
-            let next_month =
-                NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(date + Duration::days(28));
+            let next_month = NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(date + Duration::days(28));
             Ok((date, next_month))
         }
-        other => Err(AppError::BadRequest(format!(
-            "Invalid period: {other}"
-        ))),
+        other => Err(AppError::BadRequest(format!("Invalid period: {other}"))),
     }
 }

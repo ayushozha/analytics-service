@@ -202,11 +202,7 @@ pub async fn get_cohorts(
     Ok(cohort_groups)
 }
 
-fn generate_periods(
-    start: NaiveDate,
-    end: NaiveDate,
-    group_by: &str,
-) -> AppResult<Vec<NaiveDate>> {
+fn generate_periods(start: NaiveDate, end: NaiveDate, group_by: &str) -> AppResult<Vec<NaiveDate>> {
     let mut periods = Vec::new();
     let mut current = match group_by {
         "week" => {
@@ -214,9 +210,7 @@ fn generate_periods(
             let weekday = start.weekday().num_days_from_monday();
             start - Duration::days(weekday as i64)
         }
-        "month" => {
-            NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap_or(start)
-        }
+        "month" => NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap_or(start),
         _ => start,
     };
 
@@ -239,8 +233,6 @@ fn next_period_start(date: NaiveDate, group_by: &str) -> AppResult<NaiveDate> {
             };
             Ok(NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(date + Duration::days(28)))
         }
-        other => Err(AppError::BadRequest(format!(
-            "Invalid group_by: {other}"
-        ))),
+        other => Err(AppError::BadRequest(format!("Invalid group_by: {other}"))),
     }
 }

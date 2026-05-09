@@ -1,11 +1,13 @@
 .PHONY: build build-sdk build-server dev clean
 
+DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
+
 # Build everything: SDK first (produces pulse.min.js), then Rust binary
 build: build-sdk build-server
 
 # Build the TypeScript SDK and copy script to Rust static dir
 build-sdk:
-	cd sdk && npm install && npm run build
+	cd sdk && npm ci && npm run build
 	cp sdk/dist/pulse.min.global.js crates/pulse-server/static/pulse.min.js
 
 # Build the Rust server (release)
@@ -35,10 +37,10 @@ docker:
 
 # Run with Docker Compose (local dev with PostgreSQL + Redis)
 docker-up:
-	docker compose up --build
+	$(DOCKER_COMPOSE) up --build
 
 docker-down:
-	docker compose down
+	$(DOCKER_COMPOSE) down
 
 # Publish SDK to npm (requires npm login)
 publish-sdk:

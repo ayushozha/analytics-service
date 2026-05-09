@@ -1,17 +1,17 @@
 # Stage 1: Build the TypeScript SDK (produces pulse.min.js)
-FROM node:20-slim AS sdk-builder
+FROM node:24.15.0-slim AS sdk-builder
 WORKDIR /sdk
-COPY sdk/package.json sdk/tsup.config.ts sdk/tsconfig.json ./
-RUN npm install
+COPY sdk/package.json sdk/package-lock.json sdk/tsup.config.ts sdk/tsconfig.json ./
+RUN npm ci
 COPY sdk/src/ src/
 RUN npm run build
 
 # Stage 2: Build the Rust server
-FROM rust:slim-bookworm AS builder
+FROM rust:1.95.0-slim-trixie AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev libpq-dev build-essential && \
+    pkg-config libssl-dev libpq-dev build-essential cmake && \
     rm -rf /var/lib/apt/lists/*
 
 # Cache dependencies
@@ -36,7 +36,7 @@ COPY --from=sdk-builder /sdk/dist/pulse.min.global.js crates/pulse-server/static
 RUN touch crates/pulse-common/src/lib.rs crates/pulse-server/src/main.rs && cargo build --release -p pulse-server
 
 # Stage 3: Runtime
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

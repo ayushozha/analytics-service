@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, warn};
+use tracing::debug;
 
 use crate::state::AppState;
 
@@ -50,18 +49,21 @@ pub struct UmamiReferrer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct UmamiEvent {
     pub x: String, // event name
     pub y: i64,    // count
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct UmamiBrowser {
     pub x: String,
     pub y: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct UmamiOS {
     pub x: String,
     pub y: i64,
@@ -74,6 +76,7 @@ pub struct UmamiCountry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct UmamiTimeseriesPoint {
     pub x: String, // date string
     pub y: i64,    // count
@@ -175,9 +178,7 @@ impl UmamiClient {
     ) -> Result<UmamiStats, UmamiError> {
         self.get(
             state,
-            &format!(
-                "/api/websites/{website_id}/stats?startAt={start_at}&endAt={end_at}"
-            ),
+            &format!("/api/websites/{website_id}/stats?startAt={start_at}&endAt={end_at}"),
         )
         .await
     }
@@ -216,6 +217,7 @@ impl UmamiClient {
         .await
     }
 
+    #[allow(dead_code)]
     pub async fn get_browsers(
         &self,
         state: &Arc<AppState>,
@@ -233,6 +235,7 @@ impl UmamiClient {
         .await
     }
 
+    #[allow(dead_code)]
     pub async fn get_os(
         &self,
         state: &Arc<AppState>,
@@ -267,6 +270,7 @@ impl UmamiClient {
         .await
     }
 
+    #[allow(dead_code)]
     pub async fn get_events(
         &self,
         state: &Arc<AppState>,
@@ -289,11 +293,8 @@ impl UmamiClient {
         state: &Arc<AppState>,
         website_id: &str,
     ) -> Result<UmamiActiveVisitors, UmamiError> {
-        self.get(
-            state,
-            &format!("/api/websites/{website_id}/active"),
-        )
-        .await
+        self.get(state, &format!("/api/websites/{website_id}/active"))
+            .await
     }
 }
 

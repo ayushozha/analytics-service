@@ -49,10 +49,26 @@ pub async fn get_stats(
     let prev_end = params.start_at;
     let today = Utc::now().date_naive();
 
-    let current = qsvc::fetch_stats(&state.db, auth.project_id, params.start_at, params.end_at, today).await?;
-    let previous = qsvc::fetch_stats(&state.db, auth.project_id, prev_start, prev_end, today).await?;
-    let events_current = qsvc::fetch_events_count(&state.db, auth.project_id, params.start_at, params.end_at, today).await?;
-    let events_prev = qsvc::fetch_events_count(&state.db, auth.project_id, prev_start, prev_end, today).await?;
+    let current = qsvc::fetch_stats(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+    )
+    .await?;
+    let previous =
+        qsvc::fetch_stats(&state.db, auth.project_id, prev_start, prev_end, today).await?;
+    let events_current = qsvc::fetch_events_count(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+    )
+    .await?;
+    let events_prev =
+        qsvc::fetch_events_count(&state.db, auth.project_id, prev_start, prev_end, today).await?;
 
     let mut result = json!({
         "pageviews": { "value": current.0, "prev": previous.0 },
@@ -75,13 +91,16 @@ pub async fn get_stats(
             let end_ms = params.end_at.timestamp_millis();
             if let Ok(umami_stats) = umami.get_stats(&state, &website_id, start_ms, end_ms).await {
                 let map = result.as_object_mut().unwrap();
-                map.insert("umami".to_string(), json!({
-                    "pageviews": umami_stats.pageviews,
-                    "visitors": umami_stats.visitors,
-                    "sessions": umami_stats.visits,
-                    "bounces": umami_stats.bounces,
-                    "totaltime": umami_stats.totaltime,
-                }));
+                map.insert(
+                    "umami".to_string(),
+                    json!({
+                        "pageviews": umami_stats.pageviews,
+                        "visitors": umami_stats.visitors,
+                        "sessions": umami_stats.visits,
+                        "bounces": umami_stats.bounces,
+                        "totaltime": umami_stats.totaltime,
+                    }),
+                );
             }
         }
     }
@@ -97,7 +116,14 @@ pub async fn get_timeseries(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     let today = Utc::now().date_naive();
-    let data = qsvc::fetch_timeseries(&state.db, auth.project_id, params.start_at, params.end_at, today).await?;
+    let data = qsvc::fetch_timeseries(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+    )
+    .await?;
     Ok(axum::Json(json!({ "data": data })))
 }
 
@@ -109,13 +135,25 @@ pub async fn get_pages(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     let today = Utc::now().date_naive();
-    let data = qsvc::fetch_pages(&state.db, auth.project_id, params.start_at, params.end_at, today, params.limit, params.offset).await?;
+    let data = qsvc::fetch_pages(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+        params.limit,
+        params.offset,
+    )
+    .await?;
 
     if let Some(ref umami) = state.umami {
         if let Some(website_id) = qsvc::get_umami_website_id(&state, auth.project_id).await {
             let start_ms = params.start_at.timestamp_millis();
             let end_ms = params.end_at.timestamp_millis();
-            if let Ok(umami_pages) = umami.get_pageviews(&state, &website_id, start_ms, end_ms, params.limit).await {
+            if let Ok(umami_pages) = umami
+                .get_pageviews(&state, &website_id, start_ms, end_ms, params.limit)
+                .await
+            {
                 let result = qsvc::merge_page_data(data, umami_pages);
                 return Ok(axum::Json(json!({ "data": result })));
             }
@@ -133,18 +171,33 @@ pub async fn get_referrers(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     let today = Utc::now().date_naive();
-    let mut data = qsvc::fetch_referrers(&state.db, auth.project_id, params.start_at, params.end_at, today, params.limit, params.offset).await?;
+    let mut data = qsvc::fetch_referrers(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+        params.limit,
+        params.offset,
+    )
+    .await?;
 
     if let Some(ref umami) = state.umami {
         if let Some(website_id) = qsvc::get_umami_website_id(&state, auth.project_id).await {
             let start_ms = params.start_at.timestamp_millis();
             let end_ms = params.end_at.timestamp_millis();
-            if let Ok(umami_refs) = umami.get_referrers(&state, &website_id, start_ms, end_ms, params.limit).await {
+            if let Ok(umami_refs) = umami
+                .get_referrers(&state, &website_id, start_ms, end_ms, params.limit)
+                .await
+            {
                 data = qsvc::merge_kv_data(
                     data,
                     "referrer_domain",
                     "visits",
-                    &umami_refs.iter().map(|r| (r.x.clone(), r.y)).collect::<Vec<_>>(),
+                    &umami_refs
+                        .iter()
+                        .map(|r| (r.x.clone(), r.y))
+                        .collect::<Vec<_>>(),
                 );
             }
         }
@@ -161,7 +214,16 @@ pub async fn get_events(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     let today = Utc::now().date_naive();
-    let data = qsvc::fetch_events(&state.db, auth.project_id, params.start_at, params.end_at, today, params.limit, params.offset).await?;
+    let data = qsvc::fetch_events(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+        params.limit,
+        params.offset,
+    )
+    .await?;
     Ok(axum::Json(json!({ "data": data })))
 }
 
@@ -173,7 +235,16 @@ pub async fn get_devices(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     let today = Utc::now().date_naive();
-    let data = qsvc::fetch_devices(&state.db, auth.project_id, params.start_at, params.end_at, today, params.limit, params.offset).await?;
+    let data = qsvc::fetch_devices(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+        params.limit,
+        params.offset,
+    )
+    .await?;
     Ok(axum::Json(json!({ "data": data })))
 }
 
@@ -185,18 +256,33 @@ pub async fn get_geo(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     let today = Utc::now().date_naive();
-    let mut data = qsvc::fetch_geo(&state.db, auth.project_id, params.start_at, params.end_at, today, params.limit, params.offset).await?;
+    let mut data = qsvc::fetch_geo(
+        &state.db,
+        auth.project_id,
+        params.start_at,
+        params.end_at,
+        today,
+        params.limit,
+        params.offset,
+    )
+    .await?;
 
     if let Some(ref umami) = state.umami {
         if let Some(website_id) = qsvc::get_umami_website_id(&state, auth.project_id).await {
             let start_ms = params.start_at.timestamp_millis();
             let end_ms = params.end_at.timestamp_millis();
-            if let Ok(umami_countries) = umami.get_countries(&state, &website_id, start_ms, end_ms, params.limit).await {
+            if let Ok(umami_countries) = umami
+                .get_countries(&state, &website_id, start_ms, end_ms, params.limit)
+                .await
+            {
                 data = qsvc::merge_kv_data(
                     data,
                     "country",
                     "visitors",
-                    &umami_countries.iter().map(|c| (c.x.clone(), c.y)).collect::<Vec<_>>(),
+                    &umami_countries
+                        .iter()
+                        .map(|c| (c.x.clone(), c.y))
+                        .collect::<Vec<_>>(),
                 );
             }
         }
@@ -212,7 +298,8 @@ pub async fn get_realtime(
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
 
-    let active_visitors = qsvc::fetch_realtime(&state, auth.project_id).await
+    let active_visitors = qsvc::fetch_realtime(&state, auth.project_id)
+        .await
         .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
 
     let mut result = json!({ "active_visitors": active_visitors });

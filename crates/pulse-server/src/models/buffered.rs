@@ -59,6 +59,25 @@ pub struct BufferedJsError {
     pub path: Option<String>,
     pub browser: Option<String>,
     pub os: Option<String>,
+    pub release: Option<String>,
+    pub environment: Option<String>,
+    pub fingerprint: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BufferedLogEntry {
+    pub project_id: Uuid,
+    pub visitor_id: String,
+    pub session_id: Uuid,
+    pub level: String,
+    pub message: String,
+    pub body: serde_json::Value,
+    pub path: Option<String>,
+    pub browser: Option<String>,
+    pub os: Option<String>,
+    pub release: Option<String>,
+    pub environment: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

@@ -30,7 +30,10 @@ pub async fn resolve_session(
     if let Some(cached) = cached {
         if let Ok(session_cache) = serde_json::from_str::<SessionCache>(&cached) {
             // Extend session TTL
-            let _: () = redis.expire(&cache_key, SESSION_TTL as i64).await.unwrap_or(());
+            let _: () = redis
+                .expire(&cache_key, SESSION_TTL as i64)
+                .await
+                .unwrap_or(());
             return Ok(session_cache.session_id);
         }
     }

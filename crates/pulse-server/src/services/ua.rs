@@ -13,12 +13,15 @@ pub fn parse_user_agent(ua: &str) -> ParsedUA {
         Some(result) => ParsedUA {
             browser: Some(result.name.to_string()),
             os: Some(result.os.to_string()),
-            device: Some(match result.category.as_ref() {
-                "smartphone" => "mobile",
-                "mobilephone" => "mobile",
-                "tablet" => "tablet",
-                _ => "desktop",
-            }.to_string()),
+            device: Some(
+                match result.category {
+                    "smartphone" => "mobile",
+                    "mobilephone" => "mobile",
+                    "tablet" => "tablet",
+                    _ => "desktop",
+                }
+                .to_string(),
+            ),
         },
         None => ParsedUA::default(),
     }

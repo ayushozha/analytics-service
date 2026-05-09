@@ -15,23 +15,20 @@ pub fn lookup_ip(reader: &Reader<Vec<u8>>, ip_str: &str) -> GeoResult {
         Err(_) => return GeoResult::default(),
     };
 
-    match reader.lookup::<maxminddb::geoip2::City>(ip) {
-        Ok(city) => GeoResult {
-            country: city
-                .country
-                .and_then(|c| c.iso_code)
-                .map(|s| s.to_string()),
-            region: city
-                .subdivisions
-                .and_then(|s| s.first().cloned())
-                .and_then(|s| s.names)
-                .and_then(|n| n.get("en").copied())
-                .map(|s| s.to_string()),
-            city: city
-                .city
-                .and_then(|c| c.names)
-                .and_then(|n| n.get("en").copied())
-                .map(|s| s.to_string()),
+    match reader.lookup(ip) {
+        Ok(result) => GeoResult {
+            country: result
+                .decode_path::<String>(&maxminddb::path!["country", "iso_code"])
+                .ok()
+                .flatten(),
+            region: result
+                .decode_path::<String>(&maxminddb::path!["subdivisions", 0, "names", "en"])
+                .ok()
+                .flatten(),
+            city: result
+                .decode_path::<String>(&maxminddb::path!["city", "names", "en"])
+                .ok()
+                .flatten(),
         },
         Err(_) => GeoResult::default(),
     }

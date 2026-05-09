@@ -12,9 +12,10 @@ services:
       - RUST_LOG=info
       - DATABASE_URL=${DATABASE_URL:-postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@projects-db:5432/pulse_analytics?sslmode=disable}
       - REDIS_URL=${REDIS_URL:-redis://pulse_analytics_user:10e9964b39c0b82e29854205b23c1c337e969b22260daaf22d9ff4b611edfd88@projects-redis:6379/0}
-      - REDIS_KEY_PREFIX=pulse_analytics:
-      - PULSE_ADMIN_TOKEN=${PULSE_ADMIN_TOKEN}
-      - PULSE_COOKIE_SECRET=${PULSE_COOKIE_SECRET}
+      - "REDIS_KEY_PREFIX=pulse_analytics:"
+      - PULSE_ADMIN_TOKEN=${PULSE_ADMIN_TOKEN:-}
+      - PULSE_COOKIE_SECRET=${PULSE_COOKIE_SECRET:-}
+      - EMAIL_REPORT_WEBHOOK_URL=${EMAIL_REPORT_WEBHOOK_URL:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://tapdue.com,https://www.tapdue.com,https://ayushojha.com,https://pulse.ayushojha.com}
       - BUFFER_FLUSH_INTERVAL_SECS=5
       - BUFFER_BATCH_SIZE=500

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
+use crate::models::webhook::Webhook;
+use crate::state::AppState;
 use chrono::{Datelike, Duration, NaiveDate, Timelike, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use sqlx::PgPool;
 use tokio::time;
 use tracing::{error, info};
-use crate::models::webhook::Webhook;
-use crate::state::AppState;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -163,12 +163,10 @@ async fn check_zero_traffic(state: &AppState) -> Result<(), anyhow::Error> {
             dispatch_webhook(webhook, &payload).await;
 
             // Update last_triggered_at
-            let _ = sqlx::query(
-                "UPDATE webhooks SET last_triggered_at = NOW() WHERE id = $1",
-            )
-            .bind(webhook.id)
-            .execute(&state.db)
-            .await;
+            let _ = sqlx::query("UPDATE webhooks SET last_triggered_at = NOW() WHERE id = $1")
+                .bind(webhook.id)
+                .execute(&state.db)
+                .await;
         }
     }
 
@@ -261,11 +259,7 @@ async fn dispatch_webhook(webhook: &Webhook, payload: &serde_json::Value) {
     match req.body(body).send().await {
         Ok(resp) => {
             if !resp.status().is_success() {
-                error!(
-                    "Webhook {} returned status {}",
-                    webhook.id,
-                    resp.status()
-                );
+                error!("Webhook {} returned status {}", webhook.id, resp.status());
             }
         }
         Err(e) => {
