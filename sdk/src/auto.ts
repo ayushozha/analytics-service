@@ -6,6 +6,12 @@
   const a = s.getAttribute("data-api") || "";
   const e = a + "/api/collect";
 
+  function saneNumber(value: string | null, fallback: number, min: number, max: number): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(Math.floor(parsed), max));
+  }
+
   // Feature flags from data attributes (all default on except heavy ones)
   const cfg = {
     respectDnt: s.getAttribute("data-dnt") !== "false",
@@ -13,6 +19,9 @@
     consentGranted: s.getAttribute("data-consent-granted") !== "false",
     release: s.getAttribute("data-release") || "",
     environment: s.getAttribute("data-environment") || "production",
+    batch: s.getAttribute("data-batch") !== "false",
+    batchSize: saneNumber(s.getAttribute("data-batch-size"), 10, 1, 100),
+    batchFlushIntervalMs: saneNumber(s.getAttribute("data-batch-interval"), 2000, 250, Number.MAX_SAFE_INTEGER),
     trackUtm: s.getAttribute("data-utm") !== "false",
     trackScrollDepth: s.getAttribute("data-scroll") === "true",
     trackWebVitals: s.getAttribute("data-vitals") === "true",
@@ -52,16 +61,63 @@
     else sessionStorage.setItem("_pv", vid);
   } catch {}
 
+  const queue: Record<string, unknown>[] = [];
+  let queueTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function jsonBeaconBody(body: string): BodyInit {
+    return typeof Blob !== "undefined" ? new Blob([body], { type: "application/json" }) : body;
+  }
+
+  function flush(useBeacon = false) {
+    if (queueTimer) {
+      clearTimeout(queueTimer);
+      queueTimer = undefined;
+    }
+    while (queue.length > 0) {
+      const events = queue.splice(0, cfg.batchSize);
+      const body = JSON.stringify({ events });
+      const url = a + "/api/batch";
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(url + "?key=" + k, jsonBeaconBody(body));
+        if (sent) continue;
+        if (useBeacon) {
+          queue.unshift(...events);
+          break;
+        }
+      }
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Pulse-Key": k! },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }
+
+  function enqueue(envelope: Record<string, unknown>) {
+    queue.push(envelope);
+    if (queue.length >= cfg.batchSize) {
+      flush(false);
+      return;
+    }
+    if (!queueTimer) queueTimer = setTimeout(() => flush(false), cfg.batchFlushIntervalMs);
+  }
+
   function send(type: string, payload: Record<string, unknown>) {
-    const body = JSON.stringify({
+    const envelope = {
       type,
       payload,
       visitor_id: vid,
       consent_mode: cfg.consentMode,
       consent_granted: cfg.consentGranted,
-    });
+    };
+    if (cfg.batch) {
+      enqueue(envelope);
+      return;
+    }
+    const body = JSON.stringify(envelope);
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(e + "?key=" + k, body);
+      navigator.sendBeacon(e + "?key=" + k, jsonBeaconBody(body));
     } else {
       fetch(e, {
         method: "POST",
@@ -70,6 +126,13 @@
         keepalive: true,
       });
     }
+  }
+
+  if (cfg.batch) {
+    window.addEventListener("pagehide", () => flush(true));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush(true);
+    });
   }
 
   function selector(target: Element | null): string {

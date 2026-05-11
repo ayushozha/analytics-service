@@ -8,6 +8,9 @@ export interface PulseConfig {
   release?: string;
   environment?: string;
   debug?: boolean;
+  batch?: boolean;
+  batchSize?: number;
+  batchFlushIntervalMs?: number;
   // Module feature flags
   trackUtm?: boolean;
   trackScrollDepth?: boolean;
@@ -77,6 +80,24 @@ export interface GeoData {
 
 export interface RealtimeResponse {
   active_visitors: number;
+}
+
+export interface PulseBatchEvent {
+  type: string;
+  payload: Record<string, unknown>;
+  visitorId: string;
+  timestamp?: number;
+  consentMode?: string;
+  consentGranted?: boolean;
+}
+
+export interface PulseBatchResponse {
+  ok: boolean;
+  received: number;
+  tracked: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{ index: number; error: string }>;
 }
 
 export interface ListResponse<T> {
@@ -1271,7 +1292,7 @@ export interface BiDatabaseConnection {
   id: string;
   project_id: string;
   name: string;
-  database_type: "postgres" | string;
+  database_type: "postgres" | "clickhouse" | "http_json" | string;
   connection_string_masked: string;
   allowed_schemas: string[];
   is_active: boolean;
@@ -1284,7 +1305,7 @@ export interface BiDatabaseConnection {
 
 export interface BiDatabaseConnectionInput {
   name: string;
-  databaseType?: "postgres" | string;
+  databaseType?: "postgres" | "clickhouse" | "http_json" | string;
   connectionString: string;
   allowedSchemas?: string[];
   isActive?: boolean;

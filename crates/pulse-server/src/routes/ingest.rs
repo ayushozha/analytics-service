@@ -3,6 +3,7 @@ use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::Extension;
 use chrono::Utc;
+use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
 
@@ -22,6 +23,29 @@ use crate::state::SharedState;
 use pulse_common::types::{CollectEnvelope, CollectRequest};
 use uuid::Uuid;
 
+const MAX_COLLECT_BATCH_SIZE: usize = 100;
+
+#[derive(Debug, Deserialize)]
+pub struct CollectBatchEnvelope {
+    #[serde(default, alias = "batch")]
+    pub events: Vec<CollectEnvelope>,
+}
+
+#[derive(Debug)]
+struct CollectOutcome {
+    tracked: bool,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct IngestRequestContext {
+    user_agent: String,
+    parsed_ua: ua::ParsedUA,
+    geo_result: geo::GeoResult,
+    privacy_settings: privacy::PrivacySettings,
+    dnt_enabled: bool,
+}
+
 pub async fn collect(
     Extension(state): Extension<SharedState>,
     auth: AuthenticatedProject,
@@ -30,12 +54,87 @@ pub async fn collect(
     axum::Json(envelope): axum::Json<CollectEnvelope>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("ingest")?;
+    let context = build_ingest_context(&state, auth.project_id, &headers, addr).await?;
+    let outcome = process_collect_envelope(&state, &auth, &context, envelope).await?;
 
-    // Extract client info
+    if outcome.tracked {
+        Ok(axum::Json(json!({ "ok": true, "tracked": true })))
+    } else {
+        Ok(axum::Json(json!({
+            "ok": true,
+            "tracked": false,
+            "reason": outcome.reason,
+        })))
+    }
+}
+
+pub async fn collect_batch(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    axum::Json(batch): axum::Json<CollectBatchEnvelope>,
+) -> AppResult<impl IntoResponse> {
+    auth.require_scope("ingest")?;
+
+    if batch.events.is_empty() {
+        return Err(AppError::BadRequest(
+            "Batch requires at least one event".to_string(),
+        ));
+    }
+    if batch.events.len() > MAX_COLLECT_BATCH_SIZE {
+        return Err(AppError::BadRequest(format!(
+            "Batch supports at most {MAX_COLLECT_BATCH_SIZE} events"
+        )));
+    }
+
+    let context = build_ingest_context(&state, auth.project_id, &headers, addr).await?;
+    let received = batch.events.len();
+    let mut tracked = 0;
+    let mut skipped = 0;
+    let mut errors = Vec::new();
+
+    for (index, envelope) in batch.events.into_iter().enumerate() {
+        match process_collect_envelope(&state, &auth, &context, envelope).await {
+            Ok(outcome) if outcome.tracked => tracked += 1,
+            Ok(_) => skipped += 1,
+            Err(err) => errors.push(json!({
+                "index": index,
+                "error": collect_error_message(&err),
+            })),
+        }
+    }
+
+    Ok(axum::Json(json!({
+        "ok": errors.is_empty(),
+        "received": received,
+        "tracked": tracked,
+        "skipped": skipped,
+        "failed": errors.len(),
+        "errors": errors,
+    })))
+}
+
+fn collect_error_message(err: &AppError) -> String {
+    match err {
+        AppError::Database(_) | AppError::Redis(_) | AppError::Internal(_) => {
+            "Internal server error".to_string()
+        }
+        _ => err.to_string(),
+    }
+}
+
+async fn build_ingest_context(
+    state: &SharedState,
+    project_id: Uuid,
+    headers: &HeaderMap,
+    addr: SocketAddr,
+) -> AppResult<IngestRequestContext> {
     let user_agent = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
 
     let raw_client_ip = headers
         .get("x-forwarded-for")
@@ -44,7 +143,7 @@ pub async fn collect(
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| addr.ip().to_string());
 
-    let privacy_settings = privacy::get_privacy_settings(&state.db, auth.project_id).await?;
+    let privacy_settings = privacy::get_privacy_settings(&state.db, project_id).await?;
     let dnt_enabled = headers
         .get("dnt")
         .and_then(|v| v.to_str().ok())
@@ -53,20 +152,6 @@ pub async fn collect(
             .get("sec-gpc")
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v == "1");
-    let decision = privacy::ingest_privacy_decision(
-        &privacy_settings,
-        user_agent,
-        dnt_enabled,
-        envelope.consent_mode.as_deref(),
-        envelope.consent_granted,
-    );
-    if !decision.accepted {
-        return Ok(axum::Json(json!({
-            "ok": true,
-            "tracked": false,
-            "reason": decision.reason,
-        })));
-    }
 
     let client_ip = if privacy_settings.anonymize_ip {
         privacy::anonymize_ip(&raw_client_ip)
@@ -75,7 +160,7 @@ pub async fn collect(
     };
 
     // Parse User-Agent
-    let parsed_ua = ua::parse_user_agent(user_agent);
+    let parsed_ua = ua::parse_user_agent(&user_agent);
 
     // GeoIP lookup
     let mut geo_result = if let Some(ref reader) = state.geoip {
@@ -85,6 +170,35 @@ pub async fn collect(
     };
     if privacy_settings.anonymize_ip {
         privacy::strip_geo_precision(&mut geo_result);
+    }
+
+    Ok(IngestRequestContext {
+        user_agent,
+        parsed_ua,
+        geo_result,
+        privacy_settings,
+        dnt_enabled,
+    })
+}
+
+async fn process_collect_envelope(
+    state: &SharedState,
+    auth: &AuthenticatedProject,
+    context: &IngestRequestContext,
+    envelope: CollectEnvelope,
+) -> AppResult<CollectOutcome> {
+    let decision = privacy::ingest_privacy_decision(
+        &context.privacy_settings,
+        &context.user_agent,
+        context.dnt_enabled,
+        envelope.consent_mode.as_deref(),
+        envelope.consent_granted,
+    );
+    if !decision.accepted {
+        return Ok(CollectOutcome {
+            tracked: false,
+            reason: decision.reason,
+        });
     }
 
     let now = envelope
@@ -107,8 +221,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 payload.screen.as_deref(),
                 payload.language.as_deref(),
                 None, // hostname extracted from path if needed
@@ -180,8 +294,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -283,8 +397,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -323,8 +437,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -358,8 +472,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -394,8 +508,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -430,8 +544,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -457,8 +571,8 @@ pub async fn collect(
                     lineno: payload.lineno,
                     colno: payload.colno,
                     path: payload.path,
-                    browser: parsed_ua.browser.clone(),
-                    os: parsed_ua.os.clone(),
+                    browser: context.parsed_ua.browser.clone(),
+                    os: context.parsed_ua.os.clone(),
                     release: payload.release,
                     environment: payload.environment,
                     fingerprint,
@@ -483,8 +597,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -502,8 +616,8 @@ pub async fn collect(
                     message: payload.message,
                     body: error_tracking::log_body(payload.body),
                     path: payload.path,
-                    browser: parsed_ua.browser.clone(),
-                    os: parsed_ua.os.clone(),
+                    browser: context.parsed_ua.browser.clone(),
+                    os: context.parsed_ua.os.clone(),
                     release: payload.release,
                     environment: payload.environment,
                     created_at: now,
@@ -524,8 +638,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -568,8 +682,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 payload.screen.as_deref(),
                 None,
                 None,
@@ -588,10 +702,10 @@ pub async fn collect(
                     started_at,
                     payload.duration_ms,
                     payload.entry_page.as_deref(),
-                    parsed_ua.browser.as_deref(),
-                    parsed_ua.os.as_deref(),
-                    parsed_ua.device.as_deref(),
-                    geo_result.country.as_deref(),
+                    context.parsed_ua.browser.as_deref(),
+                    context.parsed_ua.os.as_deref(),
+                    context.parsed_ua.device.as_deref(),
+                    context.geo_result.country.as_deref(),
                     payload.screen.as_deref(),
                     payload.is_complete.unwrap_or(false),
                 )
@@ -611,8 +725,8 @@ pub async fn collect(
                 &state,
                 auth.project_id,
                 &envelope.visitor_id,
-                &parsed_ua,
-                &geo_result,
+                &context.parsed_ua,
+                &context.geo_result,
                 None,
                 None,
                 None,
@@ -647,7 +761,10 @@ pub async fn collect(
         }
     }
 
-    Ok(axum::Json(json!({ "ok": true })))
+    Ok(CollectOutcome {
+        tracked: true,
+        reason: None,
+    })
 }
 
 fn evaluate_alerts_async(state: &SharedState, project_id: Uuid) {

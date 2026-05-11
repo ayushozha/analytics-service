@@ -9,6 +9,8 @@ import type {
   DeviceData,
   GeoData,
   RealtimeResponse,
+  PulseBatchEvent,
+  PulseBatchResponse,
   ListResponse,
   UserProfile,
   UserAlias,
@@ -442,6 +444,26 @@ export class PulseServerClient {
         visitor_id: visitorId,
         consent_mode: privacy?.consentMode ?? this.consentMode,
         consent_granted: privacy?.consentGranted ?? this.consentGranted,
+      }),
+    });
+  }
+
+  async collectBatch(
+    events: PulseBatchEvent[],
+    headers?: Record<string, string>,
+  ): Promise<PulseBatchResponse> {
+    return this.request("/api/batch", {
+      method: "POST",
+      headers: headers || {},
+      body: JSON.stringify({
+        events: events.map((event) => ({
+          type: event.type,
+          payload: event.payload,
+          visitor_id: event.visitorId,
+          timestamp: event.timestamp,
+          consent_mode: event.consentMode ?? this.consentMode,
+          consent_granted: event.consentGranted ?? this.consentGranted,
+        })),
       }),
     });
   }

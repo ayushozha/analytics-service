@@ -118,6 +118,7 @@ async fn main() -> anyhow::Result<()> {
     // Public ingestion routes (API key auth)
     let ingest_routes = Router::new()
         .route("/api/collect", post(routes::ingest::collect))
+        .route("/api/batch", post(routes::ingest::collect_batch))
         .layer(axum_mw::from_fn(
             middleware::rate_limit::rate_limit_middleware,
         ))

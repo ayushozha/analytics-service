@@ -405,9 +405,20 @@ function generateVisitorId(): string {
   return vid;
 }
 
+function jsonBeaconBody(body: string): BodyInit {
+  return typeof Blob !== "undefined" ? new Blob([body], { type: "application/json" }) : body;
+}
+
+function saneNumber(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(Math.floor(value), max));
+}
+
 export class PulseClient {
   private config: Required<PulseConfig>;
   private visitorId: string;
+  private queue: Record<string, unknown>[] = [];
+  private queueTimer?: ReturnType<typeof setTimeout>;
   private maxScroll = 0;
   private lastPath = "";
   private replayEnabled = false;
@@ -426,6 +437,9 @@ export class PulseClient {
       release: config.release ?? "",
       environment: config.environment ?? "production",
       debug: config.debug ?? false,
+      batch: config.batch ?? (typeof window !== "undefined"),
+      batchSize: saneNumber(config.batchSize, 10, 1, 100),
+      batchFlushIntervalMs: saneNumber(config.batchFlushIntervalMs, 2000, 250, Number.MAX_SAFE_INTEGER),
       trackUtm: config.trackUtm ?? true,
       trackScrollDepth: config.trackScrollDepth ?? false,
       trackWebVitals: config.trackWebVitals ?? false,
@@ -441,6 +455,7 @@ export class PulseClient {
     this.visitorId = generateVisitorId();
 
     if (typeof window !== "undefined") {
+      if (this.config.batch) this.setupBatchFlush();
       if (this.config.autoTrack) this.setupAutoTracking();
       if (this.config.trackScrollDepth) this.setupScrollTracking();
       if (this.config.trackWebVitals) this.setupWebVitals();
@@ -462,20 +477,27 @@ export class PulseClient {
   private async send(type: string, payload: Record<string, unknown>) {
     if (this.isDnt()) return;
 
-    const body = JSON.stringify({
+    const envelope = {
       type,
       payload,
       visitor_id: this.visitorId,
       consent_mode: this.config.consentMode,
       consent_granted: this.config.consentGranted,
-    });
+    };
+
+    if (this.config.batch) {
+      this.enqueue(envelope);
+      return;
+    }
+
+    const body = JSON.stringify(envelope);
 
     const url = `${this.config.apiUrl}/api/collect`;
     this.log("send", type, payload);
 
     try {
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-        navigator.sendBeacon(`${url}?key=${this.config.apiKey}`, body);
+        navigator.sendBeacon(`${url}?key=${this.config.apiKey}`, jsonBeaconBody(body));
       } else {
         await fetch(url, {
           method: "POST",
@@ -489,6 +511,64 @@ export class PulseClient {
       }
     } catch (err) {
       this.log("send error", err);
+    }
+  }
+
+  private setupBatchFlush() {
+    window.addEventListener("pagehide", () => this.flushQueue(true));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") this.flushQueue(true);
+    });
+  }
+
+  private enqueue(envelope: Record<string, unknown>) {
+    this.queue.push(envelope);
+    if (this.queue.length >= this.config.batchSize) {
+      this.flushQueue(false);
+      return;
+    }
+    if (!this.queueTimer) {
+      this.queueTimer = setTimeout(() => this.flushQueue(false), this.config.batchFlushIntervalMs);
+    }
+  }
+
+  async flush(): Promise<void> {
+    await this.flushQueue(false);
+  }
+
+  private async flushQueue(useBeacon: boolean): Promise<void> {
+    if (this.queueTimer) {
+      clearTimeout(this.queueTimer);
+      this.queueTimer = undefined;
+    }
+    const url = `${this.config.apiUrl}/api/batch`;
+
+    while (this.queue.length > 0) {
+      const events = this.queue.splice(0, this.config.batchSize);
+      const body = JSON.stringify({ events });
+      this.log("flush", events.length);
+
+      try {
+        if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+          const sent = navigator.sendBeacon(`${url}?key=${this.config.apiKey}`, jsonBeaconBody(body));
+          if (sent) continue;
+          if (useBeacon) {
+            this.queue.unshift(...events);
+            break;
+          }
+        }
+        await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Pulse-Key": this.config.apiKey,
+          },
+          body,
+          keepalive: true,
+        });
+      } catch (err) {
+        this.log("flush error", err);
+      }
     }
   }
 

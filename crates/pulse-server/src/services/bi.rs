@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, Utc};
@@ -16,6 +17,7 @@ const BI_EMBED_COLUMNS: &str =
     "id, project_id, name, resource_type, resource_id, resource_config, \
     allowed_origins, theme, token_prefix, is_active, expires_at, last_accessed_at, \
     access_count, created_by, created_at, updated_at";
+const SUPPORTED_BI_DATABASE_TYPES: &[&str] = &["postgres", "clickhouse", "http_json"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SemanticMetric {
@@ -1146,29 +1148,19 @@ async fn execute_external_sql(
 ) -> AppResult<BiQueryResponse> {
     let prepared = prepare_external_sql(sql_text)?;
     let limit = limit.unwrap_or(100).clamp(1, 1000);
-    let wrapped = format!("SELECT row_to_json(q)::jsonb AS row FROM ({prepared}) q LIMIT {limit}");
     let start = Instant::now();
-    let execution = async {
-        let pool = connect_external_pool(connection).await?;
-        let mut tx = pool.begin().await.map_err(AppError::Database)?;
-        sqlx::query("SET TRANSACTION READ ONLY")
-            .execute(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
-        set_external_search_path(&mut tx, &connection.allowed_schemas).await?;
-        let rows = sqlx::query_as::<_, (serde_json::Value,)>(&wrapped)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
-        tx.rollback().await.map_err(AppError::Database)?;
-        Ok::<_, AppError>(rows)
-    }
-    .await;
+    let execution = match connection.database_type.as_str() {
+        "postgres" => execute_external_postgres_sql(connection, &prepared, limit).await,
+        "clickhouse" => execute_external_clickhouse_sql(connection, &prepared, limit).await,
+        "http_json" => execute_external_http_json_sql(connection, &prepared, limit).await,
+        other => Err(AppError::BadRequest(format!(
+            "Unsupported BI database type: {other}"
+        ))),
+    };
     let duration_ms = start.elapsed().as_millis().min(i32::MAX as u128) as i32;
 
     match execution {
         Ok(rows) => {
-            let rows: Vec<serde_json::Value> = rows.into_iter().map(|row| row.0).collect();
             let result = serde_json::Value::Array(rows.clone());
             let run = insert_query_run(
                 db,
@@ -1258,6 +1250,21 @@ async fn get_database_connection_row(
 }
 
 async fn test_external_connection(connection: &BiDatabaseConnectionRow) -> AppResult<()> {
+    match connection.database_type.as_str() {
+        "postgres" => test_external_postgres_connection(connection).await,
+        "clickhouse" => execute_external_clickhouse_sql(connection, "SELECT 1 AS ok", 1)
+            .await
+            .map(|_| ()),
+        "http_json" => execute_external_http_json_sql(connection, "SELECT 1 AS ok", 1)
+            .await
+            .map(|_| ()),
+        other => Err(AppError::BadRequest(format!(
+            "Unsupported BI database type: {other}"
+        ))),
+    }
+}
+
+async fn test_external_postgres_connection(connection: &BiDatabaseConnectionRow) -> AppResult<()> {
     let pool = connect_external_pool(connection).await?;
     let mut tx = pool.begin().await.map_err(AppError::Database)?;
     sqlx::query("SET TRANSACTION READ ONLY")
@@ -1271,6 +1278,106 @@ async fn test_external_connection(connection: &BiDatabaseConnectionRow) -> AppRe
         .map_err(AppError::Database)?;
     tx.rollback().await.map_err(AppError::Database)?;
     Ok(())
+}
+
+async fn execute_external_postgres_sql(
+    connection: &BiDatabaseConnectionRow,
+    prepared: &str,
+    limit: i64,
+) -> AppResult<Vec<serde_json::Value>> {
+    let wrapped = format!("SELECT row_to_json(q)::jsonb AS row FROM ({prepared}) q LIMIT {limit}");
+    let pool = connect_external_pool(connection).await?;
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
+    sqlx::query("SET TRANSACTION READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+    set_external_search_path(&mut tx, &connection.allowed_schemas).await?;
+    let rows = sqlx::query_as::<_, (serde_json::Value,)>(&wrapped)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
+    tx.rollback().await.map_err(AppError::Database)?;
+    Ok(rows.into_iter().map(|row| row.0).collect())
+}
+
+async fn execute_external_clickhouse_sql(
+    connection: &BiDatabaseConnectionRow,
+    prepared: &str,
+    limit: i64,
+) -> AppResult<Vec<serde_json::Value>> {
+    let (mut url, auth) = parse_http_connection_url(&connection.connection_string, "ClickHouse")?;
+    ensure_http_adapter_target_allowed(&url).await?;
+    apply_clickhouse_database_scope(&mut url, &connection.allowed_schemas)?;
+    validate_clickhouse_sql_scope(prepared, &connection.allowed_schemas)?;
+    url.query_pairs_mut().append_pair("readonly", "1");
+    let sql = format!("SELECT * FROM ({prepared}) AS q LIMIT {limit} FORMAT JSONEachRow");
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| AppError::Internal(err.to_string()))?;
+    let mut request = client
+        .post(url)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(sql);
+    if let Some((username, password)) = auth {
+        request = request.basic_auth(username, password);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|err| AppError::BadRequest(format!("ClickHouse query failed: {err}")))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(AppError::BadRequest(format!(
+            "ClickHouse returned HTTP {}: {}",
+            status.as_u16(),
+            truncate_text(&body, 512)
+        )));
+    }
+    parse_json_each_row(&body)
+}
+
+async fn execute_external_http_json_sql(
+    connection: &BiDatabaseConnectionRow,
+    prepared: &str,
+    limit: i64,
+) -> AppResult<Vec<serde_json::Value>> {
+    let (url, auth) = parse_http_connection_url(&connection.connection_string, "HTTP JSON")?;
+    ensure_http_adapter_target_allowed(&url).await?;
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| AppError::Internal(err.to_string()))?;
+    let mut request = client.post(url).json(&json!({
+        "sql": prepared,
+        "limit": limit,
+        "allowed_schemas": connection.allowed_schemas,
+        "enforce_allowed_schemas": true,
+    }));
+    if let Some((username, password)) = auth {
+        request = request.basic_auth(username, password);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|err| AppError::BadRequest(format!("HTTP JSON adapter failed: {err}")))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(AppError::BadRequest(format!(
+            "HTTP JSON adapter returned HTTP {}: {}",
+            status.as_u16(),
+            truncate_text(&body, 512)
+        )));
+    }
+    let value: serde_json::Value = serde_json::from_str(&body).map_err(|err| {
+        AppError::BadRequest(format!("HTTP JSON adapter returned invalid JSON: {err}"))
+    })?;
+    rows_from_http_json_response(value)
 }
 
 async fn connect_external_pool(connection: &BiDatabaseConnectionRow) -> AppResult<PgPool> {
@@ -1293,6 +1400,202 @@ async fn connect_external_pool(connection: &BiDatabaseConnectionRow) -> AppResul
             "External database connection timed out".to_string(),
         )),
     }
+}
+
+fn parse_http_connection_url(
+    connection_string: &str,
+    label: &str,
+) -> AppResult<(url::Url, Option<(String, Option<String>)>)> {
+    let mut parsed = url::Url::parse(connection_string)
+        .map_err(|_| AppError::BadRequest(format!("{label} connection_string must be a URL")))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(AppError::BadRequest(format!(
+            "{label} connection_string must start with http:// or https://"
+        )));
+    }
+    reject_local_http_adapter_host(&parsed)?;
+
+    let auth = if parsed.username().is_empty() {
+        None
+    } else {
+        let username = parsed.username().to_string();
+        let password = parsed.password().map(ToString::to_string);
+        let _ = parsed.set_username("");
+        let _ = parsed.set_password(None);
+        Some((username, password))
+    };
+    Ok((parsed, auth))
+}
+
+fn reject_local_http_adapter_host(url: &url::Url) -> AppResult<()> {
+    let Some(host) = url.host_str() else {
+        return Err(AppError::BadRequest(
+            "HTTP adapter URL requires a host".to_string(),
+        ));
+    };
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    if normalized == "localhost" || normalized.ends_with(".localhost") {
+        return Err(AppError::BadRequest(
+            "HTTP adapter URL cannot target localhost".to_string(),
+        ));
+    }
+    if let Ok(ip) = normalized.parse::<IpAddr>() {
+        reject_private_adapter_ip(ip)?;
+    }
+    Ok(())
+}
+
+async fn ensure_http_adapter_target_allowed(url: &url::Url) -> AppResult<()> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| AppError::BadRequest("HTTP adapter URL requires a host".to_string()))?;
+    reject_local_http_adapter_host(url)?;
+    let port = url.port_or_known_default().ok_or_else(|| {
+        AppError::BadRequest("HTTP adapter URL requires a resolvable port".to_string())
+    })?;
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|err| AppError::BadRequest(format!("HTTP adapter host lookup failed: {err}")))?;
+    let mut resolved_any = false;
+    for address in addresses {
+        resolved_any = true;
+        reject_private_adapter_ip(address.ip())?;
+    }
+    if !resolved_any {
+        return Err(AppError::BadRequest(
+            "HTTP adapter host did not resolve to any addresses".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn reject_private_adapter_ip(ip: IpAddr) -> AppResult<()> {
+    if is_private_adapter_ip(ip) {
+        return Err(AppError::BadRequest(
+            "HTTP adapter URL cannot target private, local, or reserved network addresses"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_private_adapter_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            let octets = ip.octets();
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || octets[0] == 0
+                || (octets[0] == 100 && (octets[1] & 0b1100_0000) == 64)
+                || (octets[0] == 198 && matches!(octets[1], 18 | 19))
+                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+        }
+        IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || (segments[0] & 0xfe00) == 0xfc00
+                || (segments[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+fn apply_clickhouse_database_scope(
+    url: &mut url::Url,
+    allowed_schemas: &serde_json::Value,
+) -> AppResult<()> {
+    let schemas = schema_names(allowed_schemas)?;
+    if schemas.len() != 1 {
+        return Err(AppError::BadRequest(
+            "ClickHouse BI connections require exactly one allowed schema/database".to_string(),
+        ));
+    }
+    let schema = &schemas[0];
+    let existing_database = url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "database").then(|| value.to_string()));
+    if let Some(database) = existing_database {
+        if database != *schema {
+            return Err(AppError::BadRequest(
+                "ClickHouse database query parameter must match allowed_schemas".to_string(),
+            ));
+        }
+    } else {
+        url.query_pairs_mut().append_pair("database", schema);
+    }
+    Ok(())
+}
+
+fn validate_clickhouse_sql_scope(sql: &str, allowed_schemas: &serde_json::Value) -> AppResult<()> {
+    let schemas = schema_names(allowed_schemas)?;
+    let tokens: Vec<&str> = sql.split_whitespace().collect();
+    let mut expect_table = false;
+    for token in tokens {
+        let normalized = token
+            .trim_matches(|ch: char| matches!(ch, '(' | ')' | ','))
+            .trim_matches('"')
+            .trim_matches('`');
+        let lower = normalized.to_ascii_lowercase();
+        if expect_table {
+            expect_table = false;
+            if normalized.is_empty() || normalized.starts_with('(') {
+                continue;
+            }
+            if normalized.contains('(') {
+                return Err(AppError::BadRequest(
+                    "ClickHouse external SQL cannot use table functions".to_string(),
+                ));
+            }
+            if let Some((schema, _table)) = normalized.split_once('.') {
+                let schema = schema.trim_matches('"').trim_matches('`');
+                if !schemas.iter().any(|allowed| allowed == schema) {
+                    return Err(AppError::BadRequest(format!(
+                        "ClickHouse table reference uses disallowed database: {schema}"
+                    )));
+                }
+            }
+        }
+        if lower == "from" || lower.ends_with("join") {
+            expect_table = true;
+        }
+    }
+    Ok(())
+}
+
+fn parse_json_each_row(body: &str) -> AppResult<Vec<serde_json::Value>> {
+    let mut rows = Vec::new();
+    for line in body.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let value: serde_json::Value = serde_json::from_str(line).map_err(|err| {
+            AppError::BadRequest(format!("ClickHouse returned invalid JSONEachRow: {err}"))
+        })?;
+        rows.push(value);
+    }
+    Ok(rows)
+}
+
+fn rows_from_http_json_response(value: serde_json::Value) -> AppResult<Vec<serde_json::Value>> {
+    if let Some(rows) = value.as_array() {
+        return Ok(rows.clone());
+    }
+    if let Some(rows) = value.get("rows").and_then(|rows| rows.as_array()) {
+        return Ok(rows.clone());
+    }
+    if let Some(rows) = value.get("data").and_then(|rows| rows.as_array()) {
+        return Ok(rows.clone());
+    }
+    Err(AppError::BadRequest(
+        "HTTP JSON adapter must return an array, {\"rows\": [...]}, or {\"data\": [...]}"
+            .to_string(),
+    ))
+}
+
+fn truncate_text(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
 }
 
 async fn set_external_search_path(
@@ -1541,18 +1844,32 @@ fn validate_database_connection_input(
             "Connection name and connection_string are required".to_string(),
         ));
     }
-    if input.database_type != "postgres" {
-        return Err(AppError::BadRequest(
-            "Only postgres BI database connections are supported".to_string(),
-        ));
+    if !SUPPORTED_BI_DATABASE_TYPES.contains(&input.database_type.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Unsupported BI database type: {}. Supported types: {}",
+            input.database_type,
+            SUPPORTED_BI_DATABASE_TYPES.join(", ")
+        )));
     }
-    if !(input.connection_string.starts_with("postgres://")
-        || input.connection_string.starts_with("postgresql://"))
-    {
-        return Err(AppError::BadRequest(
-            "Postgres connections require a postgres:// or postgresql:// connection string"
-                .to_string(),
-        ));
+    match input.database_type.as_str() {
+        "postgres" => {
+            if !(input.connection_string.starts_with("postgres://")
+                || input.connection_string.starts_with("postgresql://"))
+            {
+                return Err(AppError::BadRequest(
+                    "Postgres connections require a postgres:// or postgresql:// connection string"
+                        .to_string(),
+                ));
+            }
+        }
+        "clickhouse" => {
+            let (mut url, _) = parse_http_connection_url(&input.connection_string, "ClickHouse")?;
+            apply_clickhouse_database_scope(&mut url, &input.allowed_schemas)?;
+        }
+        "http_json" => {
+            parse_http_connection_url(&input.connection_string, "HTTP JSON")?;
+        }
+        _ => unreachable!("database type checked above"),
     }
     Ok(input)
 }
@@ -1823,10 +2140,46 @@ fn mask_connection_string(connection_string: &str) -> String {
         if parsed.password().is_some() {
             let _ = parsed.set_password(Some("redacted"));
         }
+        let pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .map(|(key, value)| {
+                let key_string = key.to_string();
+                let lower = key_string.to_ascii_lowercase();
+                let value_string = if is_sensitive_connection_param(&lower) {
+                    "redacted".to_string()
+                } else {
+                    value.to_string()
+                };
+                (key_string, value_string)
+            })
+            .collect();
+        if !pairs.is_empty() {
+            parsed.set_query(None);
+            {
+                let mut query = parsed.query_pairs_mut();
+                for (key, value) in pairs {
+                    query.append_pair(&key, &value);
+                }
+            }
+        }
         return parsed.to_string();
     }
     let prefix: String = connection_string.chars().take(12).collect();
     format!("{prefix}...")
+}
+
+fn is_sensitive_connection_param(key: &str) -> bool {
+    [
+        "token",
+        "secret",
+        "pass",
+        "key",
+        "auth",
+        "sig",
+        "credential",
+    ]
+    .iter()
+    .any(|needle| key.contains(needle))
 }
 
 fn build_visual_sql_with_policies(
@@ -2212,9 +2565,10 @@ fn sql_literal(value: &serde_json::Value) -> AppResult<String> {
 mod tests {
     use super::{
         build_drill_through_sql, build_visual_sql_with_policies, embed_token_prefix,
-        generate_embed_token, hash_embed_token, mask_connection_string, normalize_allowed_schemas,
-        normalize_embed_origins, origin_is_allowed, prepare_external_sql, prepare_safe_sql,
-        quote_pg_identifier, row_policy_clause, validate_csv_upload,
+        generate_embed_token, hash_embed_token, is_private_adapter_ip, mask_connection_string,
+        normalize_allowed_schemas, normalize_embed_origins, origin_is_allowed, parse_json_each_row,
+        prepare_external_sql, prepare_safe_sql, quote_pg_identifier, row_policy_clause,
+        rows_from_http_json_response, validate_clickhouse_sql_scope, validate_csv_upload,
         validate_database_connection_input, validate_embed_input, validate_row_policy_input,
         BiDatabaseConnectionInput, BiEmbedInput, BiRowPolicyInput, CsvUploadInput,
         DrillThroughRequest, VisualQueryRequest,
@@ -2266,6 +2620,81 @@ mod tests {
             mask_connection_string(&input.connection_string),
             "postgresql://user:redacted@example.com/db"
         );
+
+        let clickhouse = validate_database_connection_input(BiDatabaseConnectionInput {
+            name: " Events lake ".to_string(),
+            database_type: "clickhouse".to_string(),
+            connection_string:
+                " https://user:secret@clickhouse.example.com:8443/?database=pulse&token=abc "
+                    .to_string(),
+            allowed_schemas: json!(["pulse"]),
+            is_active: true,
+            created_by: None,
+        })
+        .expect("valid clickhouse connection");
+        assert_eq!(clickhouse.database_type, "clickhouse");
+        assert_eq!(
+            mask_connection_string(&clickhouse.connection_string),
+            "https://user:redacted@clickhouse.example.com:8443/?database=pulse&token=redacted"
+        );
+        assert_eq!(
+            mask_connection_string(
+                "https://adapter.example.com/query?access_token=a&client_secret=b&X-Amz-Signature=c&db=pulse"
+            ),
+            "https://adapter.example.com/query?access_token=redacted&client_secret=redacted&X-Amz-Signature=redacted&db=pulse"
+        );
+
+        assert!(
+            validate_database_connection_input(BiDatabaseConnectionInput {
+                name: " Local adapter ".to_string(),
+                database_type: "http_json".to_string(),
+                connection_string: "http://localhost:9000/query".to_string(),
+                allowed_schemas: json!([]),
+                is_active: true,
+                created_by: None,
+            })
+            .is_err()
+        );
+
+        let adapter = validate_database_connection_input(BiDatabaseConnectionInput {
+            name: " Snowflake adapter ".to_string(),
+            database_type: "http_json".to_string(),
+            connection_string: "https://adapter.example.com/query".to_string(),
+            allowed_schemas: json!([]),
+            is_active: true,
+            created_by: None,
+        })
+        .expect("valid adapter connection");
+        assert_eq!(adapter.database_type, "http_json");
+    }
+
+    #[test]
+    fn validates_http_adapter_network_and_clickhouse_scope() {
+        assert!(is_private_adapter_ip("127.0.0.1".parse().unwrap()));
+        assert!(is_private_adapter_ip("10.0.0.1".parse().unwrap()));
+        assert!(is_private_adapter_ip("169.254.169.254".parse().unwrap()));
+        assert!(!is_private_adapter_ip("8.8.8.8".parse().unwrap()));
+
+        assert!(
+            validate_clickhouse_sql_scope("SELECT * FROM pulse.events", &json!(["pulse"])).is_ok()
+        );
+        assert!(
+            validate_clickhouse_sql_scope("SELECT * FROM other.events", &json!(["pulse"])).is_err()
+        );
+        assert!(validate_clickhouse_sql_scope(
+            "SELECT * FROM remote('host', db, table)",
+            &json!(["pulse"])
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn parses_adapter_rows() {
+        let rows = rows_from_http_json_response(json!({"rows": [{"ok": true}]})).unwrap();
+        assert_eq!(rows, vec![json!({"ok": true})]);
+
+        let rows = parse_json_each_row("{\"a\":1}\n{\"a\":2}\n").unwrap();
+        assert_eq!(rows, vec![json!({"a": 1}), json!({"a": 2})]);
     }
 
     #[test]
