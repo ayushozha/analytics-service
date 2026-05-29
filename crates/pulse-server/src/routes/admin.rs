@@ -2,6 +2,7 @@ use axum::extract::Path;
 use axum::response::IntoResponse;
 use axum::Extension;
 use rand::RngExt;
+use redis::AsyncCommands;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -137,16 +138,23 @@ pub async fn revoke_api_key(
     Extension(state): Extension<SharedState>,
     Path((project_id, key_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    let result =
-        sqlx::query("UPDATE api_keys SET is_active = false WHERE id = $1 AND project_id = $2")
-            .bind(key_id)
-            .bind(project_id)
-            .execute(&state.db)
-            .await?;
+    let revoked: Option<(String,)> = sqlx::query_as(
+        "UPDATE api_keys SET is_active = false WHERE id = $1 AND project_id = $2 RETURNING key_hash",
+    )
+    .bind(key_id)
+    .bind(project_id)
+    .fetch_optional(&state.db)
+    .await?;
 
-    if result.rows_affected() == 0 {
+    let Some((key_hash,)) = revoked else {
         return Err(AppError::NotFound("API key not found".to_string()));
-    }
+    };
+
+    // Invalidate the auth middleware's cached key resolution so the revocation takes effect
+    // immediately rather than after the 5-minute cache TTL (see middleware::auth).
+    let cache_key = state.redis_key(&format!("apikey:{key_hash}"));
+    let mut redis = state.redis.clone();
+    let _: Result<i64, _> = redis.del(&cache_key).await;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -166,6 +174,9 @@ pub async fn create_webhook(
     if exists.is_none() {
         return Err(AppError::NotFound("Project not found".to_string()));
     }
+
+    crate::services::ssrf::ensure_public_http_url(&input.url)
+        .map_err(|reason| AppError::BadRequest(format!("webhook url rejected: {reason}")))?;
 
     let webhook: Webhook = sqlx::query_as(
         "INSERT INTO webhooks (project_id, url, events, secret) VALUES ($1, $2, $3, $4) \
@@ -213,6 +224,8 @@ pub async fn update_webhook(
     let existing = existing.ok_or_else(|| AppError::NotFound("Webhook not found".to_string()))?;
 
     let url = input.url.unwrap_or(existing.url);
+    crate::services::ssrf::ensure_public_http_url(&url)
+        .map_err(|reason| AppError::BadRequest(format!("webhook url rejected: {reason}")))?;
     let events = input.events.unwrap_or(existing.events);
     let is_active = input.is_active.unwrap_or(existing.is_active);
 

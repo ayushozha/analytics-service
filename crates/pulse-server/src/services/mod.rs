@@ -34,6 +34,7 @@ pub mod session;
 pub mod session_replay;
 pub mod sharing;
 pub mod sources;
+pub mod ssrf;
 pub mod surveys;
 pub mod ua;
 pub mod umami_client;

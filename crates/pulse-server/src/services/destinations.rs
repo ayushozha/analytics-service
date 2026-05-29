@@ -560,6 +560,8 @@ fn validate_input(mut input: DestinationInput) -> AppResult<DestinationInput> {
             "endpoint_url must start with http:// or https://".to_string(),
         ));
     }
+    crate::services::ssrf::ensure_public_http_url(&input.endpoint_url)
+        .map_err(|reason| AppError::BadRequest(format!("endpoint_url rejected: {reason}")))?;
     if !input.headers.is_object() {
         return Err(AppError::BadRequest(
             "headers must be an object".to_string(),
