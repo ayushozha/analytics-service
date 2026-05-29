@@ -2042,10 +2042,42 @@ const BI_ALLOWED_TABLES: &[&str] = &[
 /// Keywords that appear in a FROM/JOIN target position but are not table names.
 const RELATION_NOISE_KEYWORDS: &[&str] = &["lateral", "only"];
 
+/// Keywords that stop the current relation expectation without ending the FROM clause.
+const RELATION_STOP_KEYWORDS: &[&str] = &["on", "using"];
+
 /// Clause keywords that terminate a FROM table list.
-const RELATION_STOP_KEYWORDS: &[&str] = &[
-    "where", "group", "order", "having", "limit", "offset", "union", "except", "intersect",
-    "window", "on", "using", "inner", "left", "right", "full", "cross", "natural", "fetch", "for",
+const FROM_TERMINATORS: &[&str] = &[
+    "where",
+    "group",
+    "order",
+    "having",
+    "limit",
+    "offset",
+    "union",
+    "except",
+    "intersect",
+    "window",
+    "fetch",
+    "for",
+];
+
+/// PostgreSQL helpers that can execute arbitrary SQL or dump whole tables/schemas.
+const FORBIDDEN_BI_SQL_FUNCTIONS: &[&str] = &[
+    "query_to_xml",
+    "query_to_xmlschema",
+    "query_to_xml_and_xmlschema",
+    "table_to_xml",
+    "table_to_xmlschema",
+    "table_to_xml_and_xmlschema",
+    "schema_to_xml",
+    "schema_to_xmlschema",
+    "schema_to_xml_and_xmlschema",
+    "database_to_xml",
+    "database_to_xmlschema",
+    "database_to_xml_and_xmlschema",
+    "cursor_to_xml",
+    "cursor_to_xmlschema",
+    "cursor_to_xml_and_xmlschema",
 ];
 
 #[derive(Clone, PartialEq)]
@@ -2125,19 +2157,65 @@ fn tokenize_sql(lower_sql: &str) -> Vec<SqlTok> {
 /// Names introduced by `WITH name AS ( ... )` so they are not mistaken for base tables.
 fn collect_cte_names(toks: &[SqlTok]) -> HashSet<String> {
     let mut names = HashSet::new();
-    if toks.len() < 3 {
-        return names;
-    }
-    for i in 0..toks.len() - 2 {
-        if let (SqlTok::Word(name), SqlTok::Word(kw), SqlTok::OpenParen) =
-            (&toks[i], &toks[i + 1], &toks[i + 2])
-        {
-            if kw == "as" {
-                names.insert(name.clone());
+    for i in 0..toks.len() {
+        if let SqlTok::Word(kw) = &toks[i] {
+            if kw == "as" && cte_body_starts_after_as(toks, i) {
+                if let Some(name) = cte_name_before_as(toks, i) {
+                    names.insert(name);
+                }
             }
         }
     }
     names
+}
+
+fn cte_body_starts_after_as(toks: &[SqlTok], as_idx: usize) -> bool {
+    match toks.get(as_idx + 1) {
+        Some(SqlTok::OpenParen) => true,
+        Some(SqlTok::Word(w)) if w == "materialized" => {
+            matches!(toks.get(as_idx + 2), Some(SqlTok::OpenParen))
+        }
+        Some(SqlTok::Word(w)) if w == "not" => {
+            matches!(
+                (toks.get(as_idx + 2), toks.get(as_idx + 3)),
+                (Some(SqlTok::Word(materialized)), Some(SqlTok::OpenParen))
+                    if materialized == "materialized"
+            )
+        }
+        _ => false,
+    }
+}
+
+fn cte_name_before_as(toks: &[SqlTok], as_idx: usize) -> Option<String> {
+    if as_idx == 0 {
+        return None;
+    }
+
+    match &toks[as_idx - 1] {
+        SqlTok::Word(name) => Some(name.clone()),
+        SqlTok::CloseParen => {
+            let mut depth = 1usize;
+            let mut j = as_idx - 1;
+            while j > 0 {
+                j -= 1;
+                match &toks[j] {
+                    SqlTok::CloseParen => depth += 1,
+                    SqlTok::OpenParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return match j.checked_sub(1).and_then(|name_idx| toks.get(name_idx)) {
+                                Some(SqlTok::Word(name)) => Some(name.clone()),
+                                _ => None,
+                            };
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 /// Per parenthesis-level parser state used to find every base relation that follows a
@@ -2193,13 +2271,17 @@ fn referenced_base_relations(toks: &[SqlTok]) -> AppResult<Vec<String>> {
                     top.from_list = false;
                 } else if (w == "from" || w == "join") && top.select_seen {
                     top.expect_rel = true;
-                    top.from_list = w == "from";
+                    if w == "from" {
+                        top.from_list = true;
+                    }
+                } else if FROM_TERMINATORS.contains(&w.as_str()) && top.select_seen {
+                    top.expect_rel = false;
+                    top.from_list = false;
+                } else if RELATION_STOP_KEYWORDS.contains(&w.as_str()) && top.select_seen {
+                    top.expect_rel = false;
                 } else if top.expect_rel {
                     if RELATION_NOISE_KEYWORDS.contains(&w.as_str()) {
                         // skip "lateral"/"only" and keep expecting the relation
-                    } else if RELATION_STOP_KEYWORDS.contains(&w.as_str()) {
-                        top.expect_rel = false;
-                        top.from_list = false;
                     } else {
                         match toks.get(i + 1) {
                             Some(SqlTok::Dot) => {
@@ -2226,10 +2308,27 @@ fn referenced_base_relations(toks: &[SqlTok]) -> AppResult<Vec<String>> {
     Ok(relations)
 }
 
+fn reject_forbidden_bi_functions(toks: &[SqlTok]) -> AppResult<()> {
+    for (i, tok) in toks.iter().enumerate() {
+        let SqlTok::Word(name) = tok else {
+            continue;
+        };
+        if FORBIDDEN_BI_SQL_FUNCTIONS.contains(&name.as_str())
+            && matches!(toks.get(i + 1), Some(SqlTok::OpenParen))
+        {
+            return Err(AppError::BadRequest(format!(
+                "BI SQL cannot call PostgreSQL XML/query helper function {name}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Reject any BI SQL that reads a table outside [`BI_ALLOWED_TABLES`] (CTE names excepted).
 fn enforce_table_allowlist(sql: &str) -> AppResult<()> {
     let lower = sql.to_ascii_lowercase();
     let toks = tokenize_sql(&lower);
+    reject_forbidden_bi_functions(&toks)?;
     let ctes = collect_cte_names(&toks);
     for rel in referenced_base_relations(&toks)? {
         if ctes.contains(&rel) || BI_ALLOWED_TABLES.contains(&rel.as_str()) {
@@ -2838,13 +2937,12 @@ mod tests {
     use super::{
         build_drill_through_sql, build_visual_sql_with_policies, embed_token_prefix,
         enforce_table_allowlist, generate_embed_token, hash_embed_token, is_private_adapter_ip,
-        mask_connection_string,
-        normalize_allowed_schemas, normalize_embed_origins, origin_is_allowed, parse_json_each_row,
-        prepare_external_sql, prepare_safe_sql, quote_pg_identifier, row_policy_clause,
-        rows_from_http_json_response, validate_clickhouse_sql_scope, validate_csv_upload,
-        validate_database_connection_input, validate_embed_input, validate_row_policy_input,
-        BiDatabaseConnectionInput, BiEmbedInput, BiRowPolicyInput, CsvUploadInput,
-        DrillThroughRequest, VisualQueryRequest,
+        mask_connection_string, normalize_allowed_schemas, normalize_embed_origins,
+        origin_is_allowed, parse_json_each_row, prepare_external_sql, prepare_safe_sql,
+        quote_pg_identifier, row_policy_clause, rows_from_http_json_response,
+        validate_clickhouse_sql_scope, validate_csv_upload, validate_database_connection_input,
+        validate_embed_input, validate_row_policy_input, BiDatabaseConnectionInput, BiEmbedInput,
+        BiRowPolicyInput, CsvUploadInput, DrillThroughRequest, VisualQueryRequest,
     };
     use chrono::Utc;
     use serde_json::json;
@@ -2873,7 +2971,9 @@ mod tests {
             "SELECT connection_string FROM bi_database_connections WHERE project_id = {{project_id}}"
         )
         .is_err());
-        assert!(enforce_table_allowlist("SELECT * FROM projects WHERE id = {{project_id}}").is_err());
+        assert!(
+            enforce_table_allowlist("SELECT * FROM projects WHERE id = {{project_id}}").is_err()
+        );
         // and end-to-end through prepare_safe_sql
         let pid = Uuid::new_v4();
         assert!(prepare_safe_sql(
@@ -2930,6 +3030,33 @@ mod tests {
     }
 
     #[test]
+    fn allowlist_blocks_comma_join_after_explicit_join() {
+        assert!(enforce_table_allowlist(
+            "SELECT p.path FROM pageviews p JOIN events e ON true, api_keys k \
+             WHERE '{{project_id}}' = '{{project_id}}'"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn allowlist_blocks_postgres_xml_sql_helpers() {
+        for sql in [
+            "SELECT query_to_xml('SELECT key_hash FROM api_keys', true, true, '') \
+             WHERE '{{project_id}}' = '{{project_id}}'",
+            "SELECT pg_catalog.query_to_xml('SELECT key_hash FROM api_keys', true, true, '') \
+             WHERE '{{project_id}}' = '{{project_id}}'",
+            "SELECT table_to_xml('api_keys'::regclass, true, true, '') \
+             WHERE '{{project_id}}' = '{{project_id}}'",
+            "SELECT schema_to_xml('public', true, true, '') \
+             WHERE '{{project_id}}' = '{{project_id}}'",
+            "SELECT database_to_xml(true, true, '') \
+             WHERE '{{project_id}}' = '{{project_id}}'",
+        ] {
+            assert!(enforce_table_allowlist(sql).is_err(), "{sql}");
+        }
+    }
+
+    #[test]
     fn allowlist_permits_legitimate_analytics_queries() {
         assert!(enforce_table_allowlist(
             "SELECT path, count(*) FROM pageviews WHERE project_id = {{project_id}} GROUP BY 1"
@@ -2950,6 +3077,19 @@ mod tests {
         // daily rollups + csv uploads
         assert!(enforce_table_allowlist(
             "SELECT date, visitors FROM daily_stats WHERE project_id = {{project_id}}"
+        )
+        .is_ok());
+        // commas in GROUP BY / ORDER BY clauses are not FROM-list separators
+        assert!(enforce_table_allowlist(
+            "SELECT path, browser, count(*) FROM pageviews \
+             WHERE project_id = {{project_id}} GROUP BY path, browser ORDER BY path, browser"
+        )
+        .is_ok());
+        // CTE column aliases should not hide the CTE relation name
+        assert!(enforce_table_allowlist(
+            "WITH recent(path, cnt) AS ( \
+                 SELECT path, count(*) FROM events WHERE project_id = {{project_id}} GROUP BY path \
+             ) SELECT path, cnt FROM recent ORDER BY path, cnt"
         )
         .is_ok());
     }
