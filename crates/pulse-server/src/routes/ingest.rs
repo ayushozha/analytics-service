@@ -185,7 +185,7 @@ async fn process_collect_envelope(
     state: &SharedState,
     auth: &AuthenticatedProject,
     context: &IngestRequestContext,
-    envelope: CollectEnvelope,
+    mut envelope: CollectEnvelope,
 ) -> AppResult<CollectOutcome> {
     let decision = privacy::ingest_privacy_decision(
         &context.privacy_settings,
@@ -199,6 +199,14 @@ async fn process_collect_envelope(
             tracked: false,
             reason: decision.reason,
         });
+    }
+
+    // Clamp the caller-controlled visitor_id to its column limit (VARCHAR(64)). It is
+    // written into every event/session table, so one oversized value would otherwise fail
+    // the whole buffered batch insert downstream. Truncating on a char boundary keeps the
+    // value valid UTF-8 for any input.
+    if envelope.visitor_id.chars().count() > 64 {
+        envelope.visitor_id = envelope.visitor_id.chars().take(64).collect();
     }
 
     let now = envelope

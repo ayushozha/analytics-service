@@ -4,7 +4,7 @@ use std::time::Duration;
 use redis::AsyncCommands;
 use sqlx::PgPool;
 use tokio::time;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::models::buffered::{
     BufferedClickEvent, BufferedJsError, BufferedLogEntry, BufferedOutlink, BufferedScrollDepth,
@@ -153,7 +153,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &pv_keys {
-        flush_pageviews(state, key, batch_size).await?;
+        if let Err(e) = flush_pageviews(state, key, batch_size).await {
+            error!("flush_pageviews failed for {key}: {e}");
+        }
     }
 
     // Get all event buffer keys
@@ -165,7 +167,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &ev_keys {
-        flush_events(state, key, batch_size).await?;
+        if let Err(e) = flush_events(state, key, batch_size).await {
+            error!("flush_events failed for {key}: {e}");
+        }
     }
 
     // Get all web_vitals buffer keys
@@ -177,7 +181,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &wv_keys {
-        flush_web_vitals(state, key, batch_size).await?;
+        if let Err(e) = flush_web_vitals(state, key, batch_size).await {
+            error!("flush_web_vitals failed for {key}: {e}");
+        }
     }
 
     // Get all scroll_depths buffer keys
@@ -189,7 +195,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &sd_keys {
-        flush_scroll_depths(state, key, batch_size).await?;
+        if let Err(e) = flush_scroll_depths(state, key, batch_size).await {
+            error!("flush_scroll_depths failed for {key}: {e}");
+        }
     }
 
     // Get all search_queries buffer keys
@@ -201,7 +209,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &sq_keys {
-        flush_search_queries(state, key, batch_size).await?;
+        if let Err(e) = flush_search_queries(state, key, batch_size).await {
+            error!("flush_search_queries failed for {key}: {e}");
+        }
     }
 
     // Get all outlinks buffer keys
@@ -213,7 +223,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &ol_keys {
-        flush_outlinks(state, key, batch_size).await?;
+        if let Err(e) = flush_outlinks(state, key, batch_size).await {
+            error!("flush_outlinks failed for {key}: {e}");
+        }
     }
 
     // Get all js_errors buffer keys
@@ -225,7 +237,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &je_keys {
-        flush_js_errors(state, key, batch_size).await?;
+        if let Err(e) = flush_js_errors(state, key, batch_size).await {
+            error!("flush_js_errors failed for {key}: {e}");
+        }
     }
 
     // Get all log_entries buffer keys
@@ -237,7 +251,9 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &log_keys {
-        flush_log_entries(state, key, batch_size).await?;
+        if let Err(e) = flush_log_entries(state, key, batch_size).await {
+            error!("flush_log_entries failed for {key}: {e}");
+        }
     }
 
     // Get all click_events buffer keys
@@ -249,10 +265,90 @@ async fn flush_all_buffers(state: &Arc<AppState>, batch_size: usize) -> Result<(
         .unwrap_or_default();
 
     for key in &ce_keys {
-        flush_click_events(state, key, batch_size).await?;
+        if let Err(e) = flush_click_events(state, key, batch_size).await {
+            error!("flush_click_events failed for {key}: {e}");
+        }
     }
 
     Ok(())
+}
+
+/// Flush one buffered event type from Redis to Postgres with durability guarantees:
+/// malformed JSON is counted and logged (not silently discarded); and if the batch insert
+/// fails, rows are retried individually so a single bad row cannot drop the whole batch —
+/// rows that still fail are moved to a capped `<key>:dead` deadletter list rather than lost.
+macro_rules! flush_buffer {
+    ($state:expr, $key:expr, $batch_size:expr, $ty:ty, $insert:path, $label:expr) => {{
+        let state = $state;
+        let key = $key;
+        let mut redis = state.redis.clone();
+
+        let items: Vec<String> = redis
+            .lpop(key, std::num::NonZero::new($batch_size))
+            .await
+            .unwrap_or_default();
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut rows: Vec<$ty> = Vec::with_capacity(items.len());
+        let mut malformed = 0usize;
+        for item in &items {
+            match serde_json::from_str::<$ty>(item) {
+                Ok(row) => rows.push(row),
+                Err(_) => malformed += 1,
+            }
+        }
+        if malformed > 0 {
+            warn!(
+                "{}: dropped {} malformed buffered item(s)",
+                $label, malformed
+            );
+        }
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        match $insert(&state.db, &rows).await {
+            Ok(()) => {
+                info!("Flushed {} {} to PostgreSQL", rows.len(), $label);
+            }
+            Err(batch_err) => {
+                warn!(
+                    "{}: batch insert of {} row(s) failed ({batch_err}); retrying per-row",
+                    $label,
+                    rows.len()
+                );
+                let dead_key = format!("{}:dead", key);
+                let mut recovered = 0usize;
+                let mut dead = 0usize;
+                for row in &rows {
+                    if $insert(&state.db, std::slice::from_ref(row)).await.is_ok() {
+                        recovered += 1;
+                    } else {
+                        dead += 1;
+                        if let Ok(serialized) = serde_json::to_string(row) {
+                            let _: Result<i64, _> = redis.rpush(&dead_key, serialized).await;
+                        }
+                    }
+                }
+                // Bound the deadletter list so a persistent failure can't exhaust Redis.
+                let _: Result<(), _> = redis.ltrim(&dead_key, -10_000, -1).await;
+                if dead > 0 {
+                    error!(
+                        "{}: {} row(s) recovered individually, {} moved to deadletter {}",
+                        $label, recovered, dead, dead_key
+                    );
+                } else if recovered > 0 {
+                    info!(
+                        "{}: recovered all {} row(s) via per-row insert",
+                        $label, recovered
+                    );
+                }
+            }
+        }
+        Ok(())
+    }};
 }
 
 async fn flush_pageviews(
@@ -260,31 +356,14 @@ async fn flush_pageviews(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    // Atomically get and remove items
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let pageviews: Vec<BufferedPageview> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if pageviews.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} pageviews to PostgreSQL", pageviews.len());
-    batch_insert_pageviews(&state.db, &pageviews).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedPageview,
+        batch_insert_pageviews,
+        "pageviews"
+    )
 }
 
 async fn flush_events(
@@ -292,30 +371,14 @@ async fn flush_events(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let events: Vec<BufferedEvent> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if events.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} events to PostgreSQL", events.len());
-    batch_insert_events(&state.db, &events).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedEvent,
+        batch_insert_events,
+        "events"
+    )
 }
 
 async fn flush_web_vitals(
@@ -323,30 +386,14 @@ async fn flush_web_vitals(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let vitals: Vec<BufferedWebVital> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if vitals.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} web vitals to PostgreSQL", vitals.len());
-    batch_insert_web_vitals(&state.db, &vitals).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedWebVital,
+        batch_insert_web_vitals,
+        "web vitals"
+    )
 }
 
 async fn flush_scroll_depths(
@@ -354,30 +401,14 @@ async fn flush_scroll_depths(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let scrolls: Vec<BufferedScrollDepth> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if scrolls.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} scroll depths to PostgreSQL", scrolls.len());
-    batch_insert_scroll_depths(&state.db, &scrolls).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedScrollDepth,
+        batch_insert_scroll_depths,
+        "scroll depths"
+    )
 }
 
 async fn flush_search_queries(
@@ -385,30 +416,14 @@ async fn flush_search_queries(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let searches: Vec<BufferedSearchQuery> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if searches.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} search queries to PostgreSQL", searches.len());
-    batch_insert_search_queries(&state.db, &searches).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedSearchQuery,
+        batch_insert_search_queries,
+        "search queries"
+    )
 }
 
 async fn flush_outlinks(
@@ -416,30 +431,14 @@ async fn flush_outlinks(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let outlinks: Vec<BufferedOutlink> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if outlinks.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} outlinks to PostgreSQL", outlinks.len());
-    batch_insert_outlinks(&state.db, &outlinks).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedOutlink,
+        batch_insert_outlinks,
+        "outlinks"
+    )
 }
 
 async fn flush_js_errors(
@@ -447,30 +446,14 @@ async fn flush_js_errors(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let errors: Vec<BufferedJsError> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if errors.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} JS errors to PostgreSQL", errors.len());
-    batch_insert_js_errors(&state.db, &errors).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedJsError,
+        batch_insert_js_errors,
+        "JS errors"
+    )
 }
 
 async fn flush_log_entries(
@@ -478,30 +461,14 @@ async fn flush_log_entries(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let logs: Vec<BufferedLogEntry> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if logs.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} log entries to PostgreSQL", logs.len());
-    batch_insert_log_entries(&state.db, &logs).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedLogEntry,
+        batch_insert_log_entries,
+        "log entries"
+    )
 }
 
 async fn flush_click_events(
@@ -509,30 +476,14 @@ async fn flush_click_events(
     key: &str,
     batch_size: usize,
 ) -> Result<(), anyhow::Error> {
-    let mut redis = state.redis.clone();
-
-    let items: Vec<String> = redis
-        .lpop(key, std::num::NonZero::new(batch_size))
-        .await
-        .unwrap_or_default();
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    let clicks: Vec<BufferedClickEvent> = items
-        .iter()
-        .filter_map(|s| serde_json::from_str(s).ok())
-        .collect();
-
-    if clicks.is_empty() {
-        return Ok(());
-    }
-
-    info!("Flushing {} click events to PostgreSQL", clicks.len());
-    batch_insert_click_events(&state.db, &clicks).await?;
-
-    Ok(())
+    flush_buffer!(
+        state,
+        key,
+        batch_size,
+        BufferedClickEvent,
+        batch_insert_click_events,
+        "click events"
+    )
 }
 
 async fn batch_insert_pageviews(
