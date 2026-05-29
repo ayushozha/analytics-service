@@ -195,7 +195,7 @@ _Proposed features:_
 
 ### 4.4 Autocapture & Session Intelligence
 
-_Today:_ Pulse is a Rust/Axum + Postgres + Redis analytics service. Its tracker (sdk/src/auto.ts) is an EXPLICIT, opt-in collector, not autocapture: every interaction signal is gated behind a data-attribute that defaults OFF — trackClicks (data-clicks), trackErrors, trackOutlinks, trackScrollDepth, trackWebVitals, trackSessionR
+_Today:_ Pulse is a Rust/Axum + Postgres + Redis analytics service. Its tracker (sdk/src/auto.ts) is an EXPLICIT, opt-in collector, not autocapture: every interaction signal is gated behind a data-attribute that defaults OFF — trackClicks (data-clicks), trackErrors, trackOutlinks, trackScrollDepth, trackWebVitals, trackSessionReplay.
 
 _Benchmarked against:_ FullStory, Heap (auto-track), Pendo, PostHog
 
