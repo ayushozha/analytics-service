@@ -106,7 +106,7 @@ A single `services/llm/` module defining an async `LlmProvider` trait (`complete
 
 ### 4.1 AI Analyst — Natural-Language Query & Narrative Insights
 
-_Today:_ Pulse's "AI" is pure keyword heuristics with no LLM anywhere in the repo (grep for gemini/anthropic/openai/generativelanguage/LLM client across crates+migrations returns empty). In services/ai.rs, answer_query (lines 193-337) calls detect_intent (lines 880-900), which is substring matching ("error"/"page"/"referrer"/"e
+_Today:_ Pulse's "AI" is pure keyword heuristics with no LLM anywhere in the repo (grep for gemini/anthropic/openai/generativelanguage/LLM client across crates+migrations returns empty). In services/ai.rs, answer_query (lines 193-337) calls detect_intent (lines 880-900), which is substring matching ("error"/"page"/"referrer"/"event"/"device"/"country"/"trend").
 
 _Benchmarked against:_ Amplitude Ask Amplitude, Julius, Mixpanel Spark, PostHog Max AI, ThoughtSpot (Spotter/Sage)
 
