@@ -19,6 +19,9 @@ pub struct Config {
     pub data_retention_days: u32,
     pub cookie_secret: String,
     pub email_report_webhook_url: Option<String>,
+    /// 32-byte AES-256-GCM key (base64) for encrypting BI external-DB connection
+    /// strings at rest. When unset, connection strings are stored verbatim (legacy).
+    pub bi_connection_kms_key: Option<[u8; 32]>,
 }
 
 impl Config {
@@ -71,6 +74,42 @@ impl Config {
                 secret
             }),
             email_report_webhook_url: env::var("EMAIL_REPORT_WEBHOOK_URL").ok(),
+            bi_connection_kms_key: env::var("BI_CONNECTION_KMS_KEY")
+                .ok()
+                .and_then(|raw| Self::parse_kms_key(&raw)),
+        }
+    }
+
+    /// Decode a base64-encoded 32-byte AES-256 key. Returns None (with a warning)
+    /// for anything that does not decode to exactly 32 bytes, so a misconfigured
+    /// key degrades to plaintext storage rather than crashing the server.
+    fn parse_kms_key(raw: &str) -> Option<[u8; 32]> {
+        use base64::Engine;
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        match base64::engine::general_purpose::STANDARD.decode(trimmed) {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut key = [0u8; 32];
+                key.copy_from_slice(&bytes);
+                Some(key)
+            }
+            Ok(bytes) => {
+                tracing::warn!(
+                    "BI_CONNECTION_KMS_KEY must decode to 32 bytes (got {}); BI connection \
+                     strings will be stored unencrypted",
+                    bytes.len()
+                );
+                None
+            }
+            Err(_) => {
+                tracing::warn!(
+                    "BI_CONNECTION_KMS_KEY is not valid base64; BI connection strings will be \
+                     stored unencrypted"
+                );
+                None
+            }
         }
     }
 

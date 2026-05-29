@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 use std::net::IpAddr;
+use std::sync::OnceLock;
 use std::time::{Duration as StdDuration, Instant};
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
@@ -19,6 +23,124 @@ const BI_EMBED_COLUMNS: &str =
     allowed_origins, theme, token_prefix, is_active, expires_at, last_accessed_at, \
     access_count, created_by, created_at, updated_at";
 const SUPPORTED_BI_DATABASE_TYPES: &[&str] = &["postgres", "clickhouse", "http_json"];
+
+// --- BI connection-string encryption at rest (AES-256-GCM) ---
+
+/// Marker prefix on encrypted connection strings: `pulse_enc:v1:<base64(nonce || ciphertext)>`.
+const CONNECTION_ENC_PREFIX: &str = "pulse_enc:v1:";
+
+/// Process-wide KMS key, initialized once at startup from `Config::bi_connection_kms_key`.
+/// `None` (or an unset OnceLock) means encryption is disabled and values are stored verbatim.
+static CONNECTION_KMS_KEY: OnceLock<Option<[u8; 32]>> = OnceLock::new();
+
+/// Install the connection KMS key. Call once during startup before serving requests.
+pub fn init_connection_kms(key: Option<[u8; 32]>) {
+    let _ = CONNECTION_KMS_KEY.set(key);
+}
+
+fn connection_kms_key() -> Option<[u8; 32]> {
+    CONNECTION_KMS_KEY.get().copied().flatten()
+}
+
+fn encrypt_with_key(key: &[u8; 32], plaintext: &str) -> String {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let mut nonce_bytes = [0u8; 12];
+    let mut rng = rand::rng();
+    for byte in nonce_bytes.iter_mut() {
+        *byte = rng.random();
+    }
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    // AES-GCM encryption of in-memory data does not fail in practice.
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext.as_bytes())
+        .expect("AES-256-GCM encryption failed");
+    let mut combined = Vec::with_capacity(12 + ciphertext.len());
+    combined.extend_from_slice(&nonce_bytes);
+    combined.extend_from_slice(&ciphertext);
+    format!(
+        "{CONNECTION_ENC_PREFIX}{}",
+        base64::engine::general_purpose::STANDARD.encode(combined)
+    )
+}
+
+fn decrypt_with_key(key: &[u8; 32], stored: &str) -> AppResult<String> {
+    let Some(encoded) = stored.strip_prefix(CONNECTION_ENC_PREFIX) else {
+        // Legacy plaintext (written before a key was configured).
+        return Ok(stored.to_string());
+    };
+    let combined = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| AppError::Internal("corrupt encrypted connection string".to_string()))?;
+    if combined.len() < 12 {
+        return Err(AppError::Internal(
+            "corrupt encrypted connection string".to_string(),
+        ));
+    }
+    let (nonce_bytes, ciphertext) = combined.split_at(12);
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|_| AppError::Internal("failed to decrypt connection string".to_string()))?;
+    String::from_utf8(plaintext)
+        .map_err(|_| AppError::Internal("decrypted connection string is not UTF-8".to_string()))
+}
+
+/// Encrypt a connection string for storage. Falls back to the verbatim value when no
+/// KMS key is configured (preserving legacy behavior for dev/self-host without a key).
+fn encrypt_connection_string(plaintext: &str) -> String {
+    match connection_kms_key() {
+        Some(key) => encrypt_with_key(&key, plaintext),
+        None => plaintext.to_string(),
+    }
+}
+
+/// Decrypt a stored connection string. Prefixed values require the key; unprefixed
+/// (legacy plaintext) values pass through unchanged.
+fn decrypt_connection_string(stored: &str) -> AppResult<String> {
+    if stored.starts_with(CONNECTION_ENC_PREFIX) {
+        let key = connection_kms_key().ok_or_else(|| {
+            AppError::Internal(
+                "BI connection string is encrypted but BI_CONNECTION_KMS_KEY is not configured"
+                    .to_string(),
+            )
+        })?;
+        decrypt_with_key(&key, stored)
+    } else {
+        Ok(stored.to_string())
+    }
+}
+
+/// Decrypt the connection string on a freshly-fetched row so all downstream consumers
+/// (connect/mask) see plaintext, while the column stays encrypted at rest.
+fn decrypt_connection_row(mut row: BiDatabaseConnectionRow) -> AppResult<BiDatabaseConnectionRow> {
+    row.connection_string = decrypt_connection_string(&row.connection_string)?;
+    Ok(row)
+}
+
+/// One-shot re-encryption of any legacy plaintext connection strings. Safe to call on
+/// every startup; a no-op when no key is configured or all rows are already encrypted.
+pub async fn reencrypt_plaintext_connections(db: &PgPool) -> AppResult<u64> {
+    if connection_kms_key().is_none() {
+        return Ok(0);
+    }
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, connection_string FROM bi_database_connections WHERE connection_string NOT LIKE $1",
+    )
+    .bind(format!("{CONNECTION_ENC_PREFIX}%"))
+    .fetch_all(db)
+    .await?;
+    let mut updated = 0u64;
+    for (id, plaintext) in rows {
+        let encrypted = encrypt_connection_string(&plaintext);
+        sqlx::query("UPDATE bi_database_connections SET connection_string = $2 WHERE id = $1")
+            .bind(id)
+            .bind(&encrypted)
+            .execute(db)
+            .await?;
+        updated += 1;
+    }
+    Ok(updated)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SemanticMetric {
@@ -546,7 +668,9 @@ pub async fn list_database_connections(
     .bind(project_id)
     .fetch_all(db)
     .await?;
-    Ok(rows.into_iter().map(BiDatabaseConnection::from).collect())
+    rows.into_iter()
+        .map(|row| decrypt_connection_row(row).map(BiDatabaseConnection::from))
+        .collect()
 }
 
 pub async fn get_database_connection(
@@ -564,7 +688,8 @@ pub async fn create_database_connection(
     input: BiDatabaseConnectionInput,
 ) -> AppResult<BiDatabaseConnection> {
     let input = validate_database_connection_input(input)?;
-    let row: BiDatabaseConnectionRow = sqlx::query_as(
+    let stored_connection = encrypt_connection_string(&input.connection_string);
+    let mut row: BiDatabaseConnectionRow = sqlx::query_as(
         "INSERT INTO bi_database_connections \
          (project_id, name, database_type, connection_string, allowed_schemas, is_active, created_by) \
          VALUES ($1, $2, $3, $4, $5, $6, $7) \
@@ -574,12 +699,14 @@ pub async fn create_database_connection(
     .bind(project_id)
     .bind(&input.name)
     .bind(&input.database_type)
-    .bind(&input.connection_string)
+    .bind(&stored_connection)
     .bind(&input.allowed_schemas)
     .bind(input.is_active)
     .bind(&input.created_by)
     .fetch_one(db)
     .await?;
+    // Hand the masker the plaintext; the column stays encrypted at rest.
+    row.connection_string = input.connection_string;
     Ok(BiDatabaseConnection::from(row))
 }
 
@@ -590,7 +717,8 @@ pub async fn update_database_connection(
     input: BiDatabaseConnectionInput,
 ) -> AppResult<BiDatabaseConnection> {
     let input = validate_database_connection_input(input)?;
-    let row: BiDatabaseConnectionRow = sqlx::query_as(
+    let stored_connection = encrypt_connection_string(&input.connection_string);
+    let mut row: BiDatabaseConnectionRow = sqlx::query_as(
         "UPDATE bi_database_connections \
          SET name = $3, database_type = $4, connection_string = $5, allowed_schemas = $6, \
              is_active = $7, created_by = $8, updated_at = NOW() \
@@ -602,13 +730,14 @@ pub async fn update_database_connection(
     .bind(project_id)
     .bind(&input.name)
     .bind(&input.database_type)
-    .bind(&input.connection_string)
+    .bind(&stored_connection)
     .bind(&input.allowed_schemas)
     .bind(input.is_active)
     .bind(&input.created_by)
     .fetch_optional(db)
     .await?
     .ok_or_else(|| AppError::NotFound("BI database connection not found".to_string()))?;
+    row.connection_string = input.connection_string;
     Ok(BiDatabaseConnection::from(row))
 }
 
@@ -642,7 +771,7 @@ pub async fn test_database_connection(
         Ok(()) => (true, None),
         Err(err) => (false, Some(err.to_string())),
     };
-    let row: BiDatabaseConnectionRow = sqlx::query_as(
+    let mut row: BiDatabaseConnectionRow = sqlx::query_as(
         "UPDATE bi_database_connections \
          SET last_tested_at = NOW(), last_error = $3, updated_at = NOW() \
          WHERE id = $1 AND project_id = $2 \
@@ -654,6 +783,8 @@ pub async fn test_database_connection(
     .bind(&error)
     .fetch_one(db)
     .await?;
+    // `connection` was already decrypted by get_database_connection_row.
+    row.connection_string = connection.connection_string.clone();
     Ok(BiConnectionTestResponse {
         connection: BiDatabaseConnection::from(row),
         ok,
@@ -1259,7 +1390,7 @@ async fn get_database_connection_row(
     project_id: Uuid,
     connection_id: Uuid,
 ) -> AppResult<BiDatabaseConnectionRow> {
-    sqlx::query_as(
+    let row: BiDatabaseConnectionRow = sqlx::query_as(
         "SELECT id, project_id, name, database_type, connection_string, allowed_schemas, \
                 is_active, last_tested_at, last_error, created_by, created_at, updated_at \
          FROM bi_database_connections WHERE id = $1 AND project_id = $2",
@@ -1268,7 +1399,8 @@ async fn get_database_connection_row(
     .bind(project_id)
     .fetch_optional(db)
     .await?
-    .ok_or_else(|| AppError::NotFound("BI database connection not found".to_string()))
+    .ok_or_else(|| AppError::NotFound("BI database connection not found".to_string()))?;
+    decrypt_connection_row(row)
 }
 
 async fn test_external_connection(connection: &BiDatabaseConnectionRow) -> AppResult<()> {
@@ -2935,18 +3067,53 @@ fn sql_literal(value: &serde_json::Value) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_drill_through_sql, build_visual_sql_with_policies, embed_token_prefix,
-        enforce_table_allowlist, generate_embed_token, hash_embed_token, is_private_adapter_ip,
-        mask_connection_string, normalize_allowed_schemas, normalize_embed_origins,
-        origin_is_allowed, parse_json_each_row, prepare_external_sql, prepare_safe_sql,
-        quote_pg_identifier, row_policy_clause, rows_from_http_json_response,
+        build_drill_through_sql, build_visual_sql_with_policies, decrypt_with_key,
+        embed_token_prefix, encrypt_with_key, enforce_table_allowlist, generate_embed_token,
+        hash_embed_token, is_private_adapter_ip, mask_connection_string, normalize_allowed_schemas,
+        normalize_embed_origins, origin_is_allowed, parse_json_each_row, prepare_external_sql,
+        prepare_safe_sql, quote_pg_identifier, row_policy_clause, rows_from_http_json_response,
         validate_clickhouse_sql_scope, validate_csv_upload, validate_database_connection_input,
         validate_embed_input, validate_row_policy_input, BiDatabaseConnectionInput, BiEmbedInput,
         BiRowPolicyInput, CsvUploadInput, DrillThroughRequest, VisualQueryRequest,
+        CONNECTION_ENC_PREFIX,
     };
     use chrono::Utc;
     use serde_json::json;
     use uuid::Uuid;
+
+    #[test]
+    fn connection_string_encrypt_decrypt_round_trips() {
+        let key = [7u8; 32];
+        let plaintext = "postgresql://user:secret@warehouse.example.com:5432/analytics";
+        let encrypted = encrypt_with_key(&key, plaintext);
+        assert!(encrypted.starts_with(CONNECTION_ENC_PREFIX));
+        assert!(!encrypted.contains("secret"));
+        assert_eq!(decrypt_with_key(&key, &encrypted).unwrap(), plaintext);
+    }
+
+    #[test]
+    fn connection_decrypt_passes_through_legacy_plaintext() {
+        let key = [9u8; 32];
+        // Values written before a key was configured have no prefix and decrypt to themselves.
+        let legacy = "postgresql://user:secret@host/db";
+        assert_eq!(decrypt_with_key(&key, legacy).unwrap(), legacy);
+    }
+
+    #[test]
+    fn connection_decrypt_fails_with_wrong_key() {
+        let encrypted = encrypt_with_key(&[1u8; 32], "postgresql://u:p@host/db");
+        assert!(decrypt_with_key(&[2u8; 32], &encrypted).is_err());
+    }
+
+    #[test]
+    fn connection_encrypt_uses_fresh_nonce() {
+        let key = [3u8; 32];
+        let a = encrypt_with_key(&key, "same-plaintext");
+        let b = encrypt_with_key(&key, "same-plaintext");
+        assert_ne!(a, b, "each encryption must use a fresh random nonce");
+        assert_eq!(decrypt_with_key(&key, &a).unwrap(), "same-plaintext");
+        assert_eq!(decrypt_with_key(&key, &b).unwrap(), "same-plaintext");
+    }
 
     #[test]
     fn rejects_unsafe_sql() {
