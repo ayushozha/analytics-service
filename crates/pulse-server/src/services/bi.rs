@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::time::{Duration as StdDuration, Instant};
 
@@ -1093,9 +1094,10 @@ async fn execute_sql(
     let limit = limit.unwrap_or(100).clamp(1, 1000);
     let wrapped = format!("SELECT row_to_json(q)::jsonb AS row FROM ({prepared}) q LIMIT {limit}");
     let start = Instant::now();
-    let execution = sqlx::query_as::<_, (serde_json::Value,)>(&wrapped)
-        .fetch_all(db)
-        .await;
+    // Run inside a READ ONLY transaction with a hard statement timeout so the internal
+    // analytics DB cannot be mutated or tied up (e.g. pg_sleep) even if a malicious query
+    // slips past the keyword/allowlist checks — mirroring the external-postgres path.
+    let execution = run_internal_readonly_select(db, &wrapped).await;
     let duration_ms = start.elapsed().as_millis().min(i32::MAX as u128) as i32;
 
     match execution {
@@ -1137,6 +1139,26 @@ async fn execute_sql(
             )))
         }
     }
+}
+
+/// Execute a prepared internal BI SELECT inside a READ ONLY, time-bounded transaction.
+async fn run_internal_readonly_select(
+    db: &PgPool,
+    wrapped_sql: &str,
+) -> Result<Vec<(serde_json::Value,)>, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    // SET TRANSACTION must precede any query in the transaction.
+    sqlx::query("SET TRANSACTION READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL statement_timeout = '10s'")
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query_as::<_, (serde_json::Value,)>(wrapped_sql)
+        .fetch_all(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(rows)
 }
 
 async fn execute_external_sql(
@@ -1967,7 +1989,257 @@ fn prepare_safe_sql(sql_text: &str, project_id: Uuid) -> AppResult<String> {
             "BI SQL must include the {{project_id}} tenant placeholder".to_string(),
         ));
     }
+    // The {{project_id}} placeholder is NOT a tenant boundary on its own — a query
+    // may reference any table while still containing the placeholder somewhere
+    // (e.g. `... WHERE '{{project_id}}' = '{{project_id}}'`). Restrict the query to
+    // an allowlist of tenant-scoped analytics tables so a query-scoped key can never
+    // read another tenant's data or platform secrets (api_keys, bi_database_connections, ...).
+    enforce_table_allowlist(sql)?;
     Ok(sql.replace("{{project_id}}", &format!("'{}'::uuid", project_id)))
+}
+
+/// Tables a BI SQL query is permitted to read. Every entry is tenant-scoped by a
+/// `project_id` column, which the required `{{project_id}}` placeholder constrains.
+/// Anything not listed here — control-plane and secret tables such as `api_keys`,
+/// `bi_database_connections`, `projects`, `webhooks`, `destinations`, `shared_dashboards`,
+/// `bi_embeds`, `privacy_settings` — is rejected, closing cross-tenant exfiltration.
+const BI_ALLOWED_TABLES: &[&str] = &[
+    // raw fact / event tables
+    "pageviews",
+    "events",
+    "sessions",
+    "web_vitals",
+    "scroll_depths",
+    "search_queries",
+    "outlinks",
+    "js_errors",
+    "log_entries",
+    "click_events",
+    "survey_responses",
+    "goal_conversions",
+    "experiment_assignments",
+    "feature_flag_evaluations",
+    "session_recordings",
+    "guide_events",
+    // identity / profile tables (project-scoped)
+    "user_profiles",
+    "account_profiles",
+    "account_memberships",
+    "user_aliases",
+    // daily rollups
+    "daily_stats",
+    "daily_pages",
+    "daily_events",
+    "daily_referrers",
+    "daily_devices",
+    "daily_geo",
+    "daily_campaigns",
+    // user-uploaded BI data
+    "csv_uploads",
+    "csv_upload_rows",
+];
+
+/// Keywords that appear in a FROM/JOIN target position but are not table names.
+const RELATION_NOISE_KEYWORDS: &[&str] = &["lateral", "only"];
+
+/// Clause keywords that terminate a FROM table list.
+const RELATION_STOP_KEYWORDS: &[&str] = &[
+    "where", "group", "order", "having", "limit", "offset", "union", "except", "intersect",
+    "window", "on", "using", "inner", "left", "right", "full", "cross", "natural", "fetch", "for",
+];
+
+#[derive(Clone, PartialEq)]
+enum SqlTok {
+    Word(String),
+    Dot,
+    OpenParen,
+    CloseParen,
+    Comma,
+    Other,
+}
+
+/// Tokenize already-lowercased SQL. Single-quoted string literals are collapsed to
+/// `Other` (so their contents never look like keywords/tables), and double-quoted
+/// identifiers become `Word`s with the quotes stripped (so `FROM "api_keys"` is caught).
+fn tokenize_sql(lower_sql: &str) -> Vec<SqlTok> {
+    let chars: Vec<char> = lower_sql.chars().collect();
+    let mut toks = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' {
+            // skip a single-quoted string literal, honoring the '' escape
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == '\'' {
+                    if i + 1 < chars.len() && chars[i + 1] == '\'' {
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            toks.push(SqlTok::Other);
+        } else if c == '"' {
+            // double-quoted identifier -> Word(inner)
+            i += 1;
+            let mut ident = String::new();
+            while i < chars.len() {
+                if chars[i] == '"' {
+                    if i + 1 < chars.len() && chars[i + 1] == '"' {
+                        ident.push('"');
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                    break;
+                }
+                ident.push(chars[i]);
+                i += 1;
+            }
+            toks.push(SqlTok::Word(ident));
+        } else if c.is_ascii_alphanumeric() || c == '_' {
+            let mut w = String::new();
+            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                w.push(chars[i]);
+                i += 1;
+            }
+            toks.push(SqlTok::Word(w));
+        } else {
+            match c {
+                '.' => toks.push(SqlTok::Dot),
+                '(' => toks.push(SqlTok::OpenParen),
+                ')' => toks.push(SqlTok::CloseParen),
+                ',' => toks.push(SqlTok::Comma),
+                ch if ch.is_whitespace() => {}
+                _ => toks.push(SqlTok::Other),
+            }
+            i += 1;
+        }
+    }
+    toks
+}
+
+/// Names introduced by `WITH name AS ( ... )` so they are not mistaken for base tables.
+fn collect_cte_names(toks: &[SqlTok]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    if toks.len() < 3 {
+        return names;
+    }
+    for i in 0..toks.len() - 2 {
+        if let (SqlTok::Word(name), SqlTok::Word(kw), SqlTok::OpenParen) =
+            (&toks[i], &toks[i + 1], &toks[i + 2])
+        {
+            if kw == "as" {
+                names.insert(name.clone());
+            }
+        }
+    }
+    names
+}
+
+/// Per parenthesis-level parser state used to find every base relation that follows a
+/// real FROM/JOIN clause — including subqueries nested inside function calls such as
+/// `ARRAY(SELECT ... FROM t)` — while ignoring the `FROM` inside `EXTRACT(x FROM ts)`.
+struct LevelState {
+    select_seen: bool,
+    expect_rel: bool,
+    from_list: bool,
+}
+
+/// Collect base-table relations referenced after FROM/JOIN. Errors on schema-qualified
+/// references (e.g. `pg_catalog.x`, `public.api_keys`) which are never legitimate here.
+fn referenced_base_relations(toks: &[SqlTok]) -> AppResult<Vec<String>> {
+    let mut relations = Vec::new();
+    let mut stack = vec![LevelState {
+        select_seen: false,
+        expect_rel: false,
+        from_list: false,
+    }];
+
+    let mut i = 0;
+    while i < toks.len() {
+        match &toks[i] {
+            SqlTok::OpenParen => {
+                if let Some(top) = stack.last_mut() {
+                    // a parenthesis where a relation was expected is a subquery source
+                    top.expect_rel = false;
+                }
+                stack.push(LevelState {
+                    select_seen: false,
+                    expect_rel: false,
+                    from_list: false,
+                });
+            }
+            SqlTok::CloseParen => {
+                if stack.len() > 1 {
+                    stack.pop();
+                }
+            }
+            SqlTok::Comma => {
+                if let Some(top) = stack.last_mut() {
+                    if top.from_list {
+                        top.expect_rel = true;
+                    }
+                }
+            }
+            SqlTok::Word(w) => {
+                let top = stack.last_mut().expect("level stack is never empty");
+                if w == "select" || w == "values" {
+                    top.select_seen = true;
+                    top.expect_rel = false;
+                    top.from_list = false;
+                } else if (w == "from" || w == "join") && top.select_seen {
+                    top.expect_rel = true;
+                    top.from_list = w == "from";
+                } else if top.expect_rel {
+                    if RELATION_NOISE_KEYWORDS.contains(&w.as_str()) {
+                        // skip "lateral"/"only" and keep expecting the relation
+                    } else if RELATION_STOP_KEYWORDS.contains(&w.as_str()) {
+                        top.expect_rel = false;
+                        top.from_list = false;
+                    } else {
+                        match toks.get(i + 1) {
+                            Some(SqlTok::Dot) => {
+                                return Err(AppError::BadRequest(format!(
+                                    "BI SQL cannot reference schema-qualified tables ('{w}.*')"
+                                )));
+                            }
+                            // word( ... ) is a table function, not a base table
+                            Some(SqlTok::OpenParen) => {
+                                top.expect_rel = false;
+                            }
+                            _ => {
+                                relations.push(w.clone());
+                                top.expect_rel = false;
+                            }
+                        }
+                    }
+                }
+            }
+            SqlTok::Dot | SqlTok::Other => {}
+        }
+        i += 1;
+    }
+    Ok(relations)
+}
+
+/// Reject any BI SQL that reads a table outside [`BI_ALLOWED_TABLES`] (CTE names excepted).
+fn enforce_table_allowlist(sql: &str) -> AppResult<()> {
+    let lower = sql.to_ascii_lowercase();
+    let toks = tokenize_sql(&lower);
+    let ctes = collect_cte_names(&toks);
+    for rel in referenced_base_relations(&toks)? {
+        if ctes.contains(&rel) || BI_ALLOWED_TABLES.contains(&rel.as_str()) {
+            continue;
+        }
+        return Err(AppError::BadRequest(format!(
+            "BI SQL may only read approved analytics tables; table '{rel}' is not permitted"
+        )));
+    }
+    Ok(())
 }
 
 fn validate_read_only_sql(sql: &str) -> AppResult<()> {
@@ -2565,7 +2837,8 @@ fn sql_literal(value: &serde_json::Value) -> AppResult<String> {
 mod tests {
     use super::{
         build_drill_through_sql, build_visual_sql_with_policies, embed_token_prefix,
-        generate_embed_token, hash_embed_token, is_private_adapter_ip, mask_connection_string,
+        enforce_table_allowlist, generate_embed_token, hash_embed_token, is_private_adapter_ip,
+        mask_connection_string,
         normalize_allowed_schemas, normalize_embed_origins, origin_is_allowed, parse_json_each_row,
         prepare_external_sql, prepare_safe_sql, quote_pg_identifier, row_policy_clause,
         rows_from_http_json_response, validate_clickhouse_sql_scope, validate_csv_upload,
@@ -2587,6 +2860,142 @@ mod tests {
             project_id
         )
         .is_ok());
+    }
+
+    #[test]
+    fn allowlist_blocks_cross_tenant_secret_tables() {
+        // The original breach: an always-true placeholder predicate over a secret table.
+        assert!(enforce_table_allowlist(
+            "SELECT key_hash, project_id FROM api_keys WHERE '{{project_id}}' = '{{project_id}}'"
+        )
+        .is_err());
+        assert!(enforce_table_allowlist(
+            "SELECT connection_string FROM bi_database_connections WHERE project_id = {{project_id}}"
+        )
+        .is_err());
+        assert!(enforce_table_allowlist("SELECT * FROM projects WHERE id = {{project_id}}").is_err());
+        // and end-to-end through prepare_safe_sql
+        let pid = Uuid::new_v4();
+        assert!(prepare_safe_sql(
+            "SELECT key_hash FROM api_keys WHERE '{{project_id}}' = '{{project_id}}'",
+            pid
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn allowlist_blocks_schema_qualified_and_catalog_access() {
+        assert!(enforce_table_allowlist(
+            "SELECT * FROM information_schema.tables WHERE project_id = {{project_id}}"
+        )
+        .is_err());
+        assert!(enforce_table_allowlist(
+            "SELECT * FROM pg_catalog.pg_tables WHERE project_id = {{project_id}}"
+        )
+        .is_err());
+        assert!(enforce_table_allowlist(
+            "SELECT * FROM public.api_keys WHERE project_id = {{project_id}}"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn allowlist_blocks_quoted_identifier_bypass() {
+        // double-quoted identifiers must not slip past the allowlist
+        assert!(enforce_table_allowlist(
+            "SELECT key_hash FROM \"api_keys\" WHERE '{{project_id}}' = '{{project_id}}'"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn allowlist_blocks_subquery_into_secret_table() {
+        assert!(enforce_table_allowlist(
+            "SELECT * FROM pageviews WHERE project_id = {{project_id}} \
+             AND visitor_id IN (SELECT key_hash FROM api_keys)"
+        )
+        .is_err());
+        // even when the secret table is hidden inside a function-call subquery
+        assert!(enforce_table_allowlist(
+            "SELECT ARRAY(SELECT key_hash FROM api_keys) FROM pageviews \
+             WHERE project_id = {{project_id}}"
+        )
+        .is_err());
+        // ... or behind a UNION
+        assert!(enforce_table_allowlist(
+            "SELECT path FROM pageviews WHERE project_id = {{project_id}} \
+             UNION SELECT key_hash FROM api_keys"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn allowlist_permits_legitimate_analytics_queries() {
+        assert!(enforce_table_allowlist(
+            "SELECT path, count(*) FROM pageviews WHERE project_id = {{project_id}} GROUP BY 1"
+        )
+        .is_ok());
+        // joins between allowlisted tables
+        assert!(enforce_table_allowlist(
+            "SELECT s.id FROM sessions s JOIN events e ON e.session_id = s.id \
+             WHERE s.project_id = {{project_id}}"
+        )
+        .is_ok());
+        // CTEs are not mistaken for base tables
+        assert!(enforce_table_allowlist(
+            "WITH recent AS (SELECT * FROM events WHERE project_id = {{project_id}}) \
+             SELECT count(*) FROM recent"
+        )
+        .is_ok());
+        // daily rollups + csv uploads
+        assert!(enforce_table_allowlist(
+            "SELECT date, visitors FROM daily_stats WHERE project_id = {{project_id}}"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn allowlist_handles_extract_from_without_false_positive() {
+        // the FROM inside EXTRACT(... FROM ts) is an argument separator, not a table clause
+        assert!(enforce_table_allowlist(
+            "SELECT extract(dow from created_at) AS d, count(*) FROM pageviews \
+             WHERE project_id = {{project_id}} GROUP BY 1"
+        )
+        .is_ok());
+        assert!(enforce_table_allowlist(
+            "SELECT substring(path from 1 for 10) FROM pageviews \
+             WHERE project_id = {{project_id}}"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn allowlist_accepts_builder_output() {
+        // the visual + drill-through builders must keep passing the allowlist
+        let pid = Uuid::new_v4();
+        let visual = build_visual_sql_with_policies(
+            &VisualQueryRequest {
+                dataset: "pageviews".to_string(),
+                dimensions: vec!["path".to_string()],
+                metrics: vec!["count".to_string()],
+                start_at: None,
+                end_at: None,
+                limit: Some(50),
+            },
+            &[],
+        )
+        .expect("visual sql builds");
+        assert!(prepare_safe_sql(&visual, pid).is_ok());
+
+        let drill = build_drill_through_sql(&DrillThroughRequest {
+            dataset: "events".to_string(),
+            filters: json!({"event_name": "signup"}),
+            start_at: None,
+            end_at: None,
+            limit: Some(50),
+        })
+        .expect("drill sql builds");
+        assert!(prepare_safe_sql(&drill, pid).is_ok());
     }
 
     #[test]
