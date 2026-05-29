@@ -134,7 +134,7 @@ _Proposed features:_
 
 _Today:_ Pulse has only static-threshold alerting and hardcoded heuristic "insights" — no statistical anomaly detection, no forecasting, no root-cause analysis, and no real LLM client anywhere in the codebase.
 
-ALERTS (crates/pulse-server/src/services/alerts.rs, 540 lines): AlertRule has a fixed `operator` (one of gt/lt/gte/lte
+ALERTS (crates/pulse-server/src/services/alerts.rs, 540 lines): AlertRule has a fixed operator (one of gt/lt/gte/lte/eq).
 
 _Benchmarked against:_ Amplitude, Amplitude / Mixpanel, Anodot, Datadog, PostHog
 
