@@ -58,10 +58,10 @@ async fn main() -> anyhow::Result<()> {
     info!("Migrations applied");
 
     // Encrypt any legacy plaintext BI connection strings now that a key is configured.
-    match services::bi::reencrypt_plaintext_connections(&db).await {
-        Ok(0) => {}
-        Ok(n) => info!("Encrypted {n} legacy BI connection string(s) at rest"),
-        Err(e) => tracing::warn!("Failed to re-encrypt legacy BI connection strings: {e}"),
+    // If this fails, startup fails closed rather than serving with plaintext credentials at rest.
+    let encrypted_connections = services::bi::reencrypt_plaintext_connections(&db).await?;
+    if encrypted_connections > 0 {
+        info!("Encrypted {encrypted_connections} legacy BI connection string(s) at rest");
     }
 
     // Redis connection

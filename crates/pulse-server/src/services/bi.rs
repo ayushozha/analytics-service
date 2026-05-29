@@ -120,25 +120,30 @@ fn decrypt_connection_row(mut row: BiDatabaseConnectionRow) -> AppResult<BiDatab
 /// One-shot re-encryption of any legacy plaintext connection strings. Safe to call on
 /// every startup; a no-op when no key is configured or all rows are already encrypted.
 pub async fn reencrypt_plaintext_connections(db: &PgPool) -> AppResult<u64> {
-    if connection_kms_key().is_none() {
+    let Some(key) = connection_kms_key() else {
         return Ok(0);
-    }
+    };
+    let mut tx = db.begin().await?;
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, connection_string FROM bi_database_connections WHERE connection_string NOT LIKE $1",
+        "SELECT id, connection_string \
+         FROM bi_database_connections \
+         WHERE connection_string NOT LIKE $1 \
+         FOR UPDATE",
     )
     .bind(format!("{CONNECTION_ENC_PREFIX}%"))
-    .fetch_all(db)
+    .fetch_all(&mut *tx)
     .await?;
     let mut updated = 0u64;
     for (id, plaintext) in rows {
-        let encrypted = encrypt_connection_string(&plaintext);
+        let encrypted = encrypt_with_key(&key, &plaintext);
         sqlx::query("UPDATE bi_database_connections SET connection_string = $2 WHERE id = $1")
             .bind(id)
             .bind(&encrypted)
-            .execute(db)
+            .execute(&mut *tx)
             .await?;
         updated += 1;
     }
+    tx.commit().await?;
     Ok(updated)
 }
 

@@ -80,9 +80,8 @@ impl Config {
         }
     }
 
-    /// Decode a base64-encoded 32-byte AES-256 key. Returns None (with a warning)
-    /// for anything that does not decode to exactly 32 bytes, so a misconfigured
-    /// key degrades to plaintext storage rather than crashing the server.
+    /// Decode a base64-encoded 32-byte AES-256 key. Empty means encryption is
+    /// disabled; any non-empty malformed value fails closed at startup.
     fn parse_kms_key(raw: &str) -> Option<[u8; 32]> {
         use base64::Engine;
         let trimmed = raw.trim();
@@ -96,24 +95,44 @@ impl Config {
                 Some(key)
             }
             Ok(bytes) => {
-                tracing::warn!(
-                    "BI_CONNECTION_KMS_KEY must decode to 32 bytes (got {}); BI connection \
-                     strings will be stored unencrypted",
+                panic!(
+                    "BI_CONNECTION_KMS_KEY must decode to exactly 32 bytes (got {} bytes)",
                     bytes.len()
                 );
-                None
             }
-            Err(_) => {
-                tracing::warn!(
-                    "BI_CONNECTION_KMS_KEY is not valid base64; BI connection strings will be \
-                     stored unencrypted"
-                );
-                None
+            Err(err) => {
+                panic!("BI_CONNECTION_KMS_KEY is not valid base64: {err}");
             }
         }
     }
 
     pub fn is_production(&self) -> bool {
         self.environment == "production"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    use base64::Engine;
+
+    #[test]
+    fn parses_valid_bi_connection_kms_key() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode([5u8; 32]);
+        assert_eq!(Config::parse_kms_key(&encoded), Some([5u8; 32]));
+    }
+
+    #[test]
+    fn empty_bi_connection_kms_key_disables_encryption() {
+        assert_eq!(Config::parse_kms_key(""), None);
+        assert_eq!(Config::parse_kms_key("   "), None);
+    }
+
+    #[test]
+    fn malformed_bi_connection_kms_key_fails_closed() {
+        assert!(std::panic::catch_unwind(|| Config::parse_kms_key("not-base64")).is_err());
+
+        let short_key = base64::engine::general_purpose::STANDARD.encode([1u8; 16]);
+        assert!(std::panic::catch_unwind(|| Config::parse_kms_key(&short_key)).is_err());
     }
 }
