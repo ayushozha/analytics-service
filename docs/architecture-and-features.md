@@ -161,7 +161,7 @@ _Proposed features:_
 
 _Today:_ Pulse has a minimal but real LLM-observability slice, all added in migration 020_llm_analytics.up.sql and served by services/ai.rs (LLM* functions) via routes in features_ext.rs wired under /api/v1/ai/llm/* in main.rs (lines 446-467). It is gated behind the "ai_queries" module and the "query" API-key scope.
 
-Three tabl
+Three tables are added in migration 020_llm_analytics.up.sql: llm_traces, llm_generations, and llm_evaluations.
 
 _Benchmarked against:_ Arize Phoenix, Helicone, LangSmith, Langfuse, OpenLLMetry (Traceloop)
 
