@@ -94,6 +94,8 @@ pub fn validate_alert_definition(
                 if !matches!(parsed.scheme(), "http" | "https") {
                     return Err(format!("notify_channels[{idx}].url must use http or https"));
                 }
+                crate::services::ssrf::ensure_public_http_url(url)
+                    .map_err(|reason| format!("notify_channels[{idx}].url rejected: {reason}"))?;
                 if let Some(secret) = channel.get("secret") {
                     if !secret.is_string() {
                         return Err(format!("notify_channels[{idx}].secret must be a string"));
