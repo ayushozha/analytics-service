@@ -38,6 +38,13 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env();
     info!("Starting Pulse Analytics on port {}", config.port);
 
+    // Install the BI connection-string encryption key (if configured) before any
+    // BI connection is read or written.
+    services::bi::init_connection_kms(config.bi_connection_kms_key);
+    if config.bi_connection_kms_key.is_some() {
+        info!("BI connection-string encryption enabled");
+    }
+
     // Database connection pool
     let db = PgPoolOptions::new()
         .max_connections(20)
@@ -49,6 +56,13 @@ async fn main() -> anyhow::Result<()> {
     // Run migrations
     sqlx::migrate!("../../migrations").run(&db).await?;
     info!("Migrations applied");
+
+    // Encrypt any legacy plaintext BI connection strings now that a key is configured.
+    // If this fails, startup fails closed rather than serving with plaintext credentials at rest.
+    let encrypted_connections = services::bi::reencrypt_plaintext_connections(&db).await?;
+    if encrypted_connections > 0 {
+        info!("Encrypted {encrypted_connections} legacy BI connection string(s) at rest");
+    }
 
     // Redis connection
     let redis_client = RedisClient::open(config.redis_url.as_str())?;
