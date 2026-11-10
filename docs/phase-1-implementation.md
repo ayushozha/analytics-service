@@ -173,7 +173,7 @@ ssh -L 5433:127.0.0.1:5433 ayush@72.62.82.57 -N &
 ssh -L 6380:127.0.0.1:6380 ayush@72.62.82.57 -N &
 
 # Create database
-PGPASSWORD='i87RfJUBx5HZJuykZt4v9u3zaq10wAqV' psql -h localhost -p 5433 -U admin -d postgres -c "CREATE DATABASE pulse_analytics;"
+PGPASSWORD='<POSTGRES_PASSWORD>' psql -h localhost -p 5433 -U admin -d postgres -c "CREATE DATABASE pulse_analytics;"
 
 # Configure .env
 cp .env.example .env

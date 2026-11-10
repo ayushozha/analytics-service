@@ -7,6 +7,11 @@ use uuid::Uuid;
 
 use crate::state::SharedState;
 
+/// How often the background evaluator re-checks every project with active alerts.
+const ALERT_EVAL_INTERVAL_SECS: u64 = 60;
+/// Minimum gap between two evaluations of the same project (ingest + scheduler + other instances).
+const ALERT_EVAL_DEBOUNCE_SECS: u64 = 30;
+
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -228,6 +233,67 @@ pub async fn toggle_alert(
     Ok(alert)
 }
 
+/// Background task: evaluate every project's active alerts on a fixed schedule.
+///
+/// Ingest-driven evaluation alone can never fire "drop" alerts (`lt`/`lte`),
+/// because a traffic outage produces no ingest requests to trigger a check.
+pub fn start_alert_evaluator_task(state: SharedState) {
+    tokio::spawn(async move {
+        let mut ticker =
+            tokio::time::interval(std::time::Duration::from_secs(ALERT_EVAL_INTERVAL_SECS));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            ticker.tick().await;
+            let projects: Vec<(Uuid,)> = match sqlx::query_as(
+                "SELECT DISTINCT project_id FROM alert_rules WHERE is_active = true",
+            )
+            .fetch_all(&state.db)
+            .await
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    tracing::error!("Alert scheduler failed to list projects: {e}");
+                    continue;
+                }
+            };
+            for (project_id,) in projects {
+                match crate::services::modules::is_module_enabled(&state, project_id, "alerts")
+                    .await
+                {
+                    Ok(true) => evaluate_alerts_debounced(&state, project_id).await,
+                    Ok(false) => {}
+                    Err(e) => tracing::warn!("Alert scheduler module check failed: {e}"),
+                }
+            }
+        }
+    });
+}
+
+/// Evaluate a project's alerts at most once per debounce window, across the
+/// ingest path, the scheduler and every server instance (Redis `SET NX EX`).
+pub async fn evaluate_alerts_debounced(state: &SharedState, project_id: Uuid) {
+    let key = state.redis_key(&format!("alerts:eval:{project_id}"));
+    let mut redis = state.redis.clone();
+    let acquired: Result<Option<String>, _> = redis::cmd("SET")
+        .arg(&key)
+        .arg("1")
+        .arg("NX")
+        .arg("EX")
+        .arg(ALERT_EVAL_DEBOUNCE_SECS)
+        .query_async(&mut redis)
+        .await;
+    match acquired {
+        Ok(Some(_)) => evaluate_alerts(state, project_id).await,
+        Ok(None) => {} // evaluated recently
+        Err(e) => {
+            // Redis unavailable: still evaluate; the atomic cooldown claim below
+            // prevents duplicate notifications.
+            tracing::warn!("Alert debounce lock failed, evaluating anyway: {e}");
+            evaluate_alerts(state, project_id).await;
+        }
+    }
+}
+
 /// Evaluate all active alerts for a project.
 /// For each alert, query the metric value over the window, compare against threshold,
 /// and mark as triggered if condition met and not in cooldown.
@@ -292,15 +358,23 @@ pub async fn evaluate_alerts(state: &SharedState, project_id: Uuid) {
                 metric_value
             );
 
-            // Update last_triggered_at
-            let _ = sqlx::query(
-                "UPDATE alert_rules SET last_triggered_at = NOW(), updated_at = NOW() WHERE id = $1",
+            // Atomically claim the trigger so concurrent evaluators (other
+            // instances, ingest vs scheduler) never double-notify.
+            let claimed: Result<Option<(Uuid,)>, _> = sqlx::query_as(
+                "UPDATE alert_rules SET last_triggered_at = NOW(), updated_at = NOW() \
+                 WHERE id = $1 AND (last_triggered_at IS NULL \
+                   OR last_triggered_at < NOW() - make_interval(mins => cooldown_minutes)) \
+                 RETURNING id",
             )
             .bind(alert.id)
-            .execute(&state.db)
+            .fetch_optional(&state.db)
             .await;
 
-            dispatch_alert_notifications(&alert, metric_value, now).await;
+            match claimed {
+                Ok(Some(_)) => dispatch_alert_notifications(&alert, metric_value, now).await,
+                Ok(None) => {}
+                Err(e) => tracing::error!("Failed to record alert trigger {}: {e}", alert.id),
+            }
         }
     }
 }
