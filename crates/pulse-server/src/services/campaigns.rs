@@ -21,17 +21,39 @@ pub(crate) async fn raw_unique_visitors(
     end: DateTime<Utc>,
     key_expr: &'static str,
 ) -> AppResult<HashMap<String, i64>> {
+    use crate::services::query::{raw_data_floor, split_at_floor, RawTable};
+    let floor = raw_data_floor(db, project_id, RawTable::Pageviews).await?;
+    let (raw_start, rollup_before) = split_at_floor(start, floor);
     let sql = format!(
         "SELECT {key_expr} AS k, COUNT(DISTINCT visitor_id)::bigint FROM pageviews \
          WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 GROUP BY 1"
     );
     let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
         .bind(project_id)
-        .bind(start)
+        .bind(raw_start)
         .bind(end)
         .fetch_all(db)
         .await?;
-    Ok(rows.into_iter().collect())
+    let mut map: HashMap<String, i64> = rows.into_iter().collect();
+    // Days older than the retained raw pageviews only exist as rollups.
+    if let Some(before) = rollup_before {
+        let sql = format!(
+            "SELECT {key_expr} AS k, COALESCE(SUM(visitors), 0)::bigint FROM daily_campaigns \
+             WHERE project_id = $1 AND date >= $2::date AND date < $3::date \
+             AND date <= $4::date GROUP BY 1"
+        );
+        let old: Vec<(String, i64)> = sqlx::query_as(&sql)
+            .bind(project_id)
+            .bind(start.naive_utc())
+            .bind(before)
+            .bind(end.naive_utc())
+            .fetch_all(db)
+            .await?;
+        for (k, v) in old {
+            *map.entry(k).or_default() += v;
+        }
+    }
+    Ok(map)
 }
 
 pub(crate) const CAMPAIGN_KEY_SQL: &str = "COALESCE(utm_source, '') || chr(31) || COALESCE(utm_medium, '') || chr(31) || COALESCE(utm_campaign, '')";

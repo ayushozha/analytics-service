@@ -69,6 +69,25 @@ async fn run_retention(db: &PgPool, cutoff: NaiveDate) -> Result<(), anyhow::Err
                 info!("Dropped expired partition {name}");
             }
         }
+
+        // Rows outside the monthly ranges (historical imports, skewed clocks)
+        // live in the DEFAULT partition and are trimmed row-by-row.
+        let default_name = format!("{parent_table}_default");
+        let exists: Option<(i32,)> =
+            sqlx::query_as("SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = 'r'")
+                .bind(&default_name)
+                .fetch_optional(db)
+                .await?;
+        if exists.is_some() {
+            let sql = format!("DELETE FROM {default_name} WHERE created_at < $1::date");
+            let result = sqlx::query(&sql).bind(cutoff).execute(db).await?;
+            if result.rows_affected() > 0 {
+                info!(
+                    "Cleaned {} expired rows from {default_name}",
+                    result.rows_affected()
+                );
+            }
+        }
     }
 
     // Clean old sessions

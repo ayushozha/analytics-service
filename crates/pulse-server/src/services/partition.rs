@@ -142,6 +142,9 @@ async fn create_partition(
     // events). Move those rows into a detached table, then attach it.
     let mut tx = db.begin().await?;
     for sql in [
+        // Block concurrent inserts into the default partition so no row for
+        // this month can land between the copy below and the ATTACH.
+        format!("LOCK TABLE {default_name} IN ACCESS EXCLUSIVE MODE"),
         format!(
             "CREATE TABLE {partition_name} (LIKE {parent_table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS)"
         ),

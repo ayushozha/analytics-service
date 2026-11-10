@@ -199,21 +199,18 @@ pub(crate) fn build_funnel_sql(steps: &[StepDef], order: FunnelOrder) -> AppResu
                 .collect::<Vec<_>>()
                 .join(" UNION ALL ");
             ctes.push(format!("all_steps AS ({union})"));
-            ctes.push(
-                "anchor AS (SELECT visitor_id, MIN(created_at) AS t0 FROM all_steps GROUP BY visitor_id)"
-                    .to_string(),
-            );
-            ctes.push(
-                "within AS (SELECT a.visitor_id, a.step FROM all_steps a JOIN anchor n \
-                 ON n.visitor_id = a.visitor_id \
-                 AND a.created_at <= n.t0 + make_interval(secs => $4::double precision) \
-                 GROUP BY a.visitor_id, a.step)"
-                    .to_string(),
-            );
+            // Each prefix (steps 0..=i) gets its own anchor: the visitor's
+            // earliest occurrence of any step in that prefix. Anchoring every
+            // prefix to the earliest occurrence of *any* funnel step would let
+            // a later step (e.g. C on day 1) exclude visitors from steps A, B.
             for i in 0..steps.len() {
                 ctes.push(format!(
-                    "s{i} AS (SELECT visitor_id FROM within WHERE step <= {i} \
-                     GROUP BY visitor_id HAVING COUNT(*) = {n})",
+                    "s{i} AS (SELECT a.visitor_id FROM all_steps a \
+                     JOIN (SELECT visitor_id, MIN(created_at) AS t0 FROM all_steps \
+                           WHERE step <= {i} GROUP BY visitor_id) n ON n.visitor_id = a.visitor_id \
+                     WHERE a.step <= {i} \
+                     AND a.created_at <= n.t0 + make_interval(secs => $4::double precision) \
+                     GROUP BY a.visitor_id HAVING COUNT(DISTINCT a.step) = {n})",
                     n = i + 1
                 ));
             }
@@ -332,8 +329,9 @@ mod tests {
             FunnelOrder::Unordered,
         )
         .unwrap();
-        assert!(sql.contains("HAVING COUNT(*) = 1"));
-        assert!(sql.contains("HAVING COUNT(*) = 2"));
+        assert!(sql.contains("HAVING COUNT(DISTINCT a.step) = 1"));
+        assert!(sql.contains("HAVING COUNT(DISTINCT a.step) = 2"));
+        assert!(sql.contains("WHERE step <= 0 GROUP BY visitor_id"));
     }
 
     #[test]
