@@ -3,7 +3,44 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use std::collections::HashMap;
+
 use crate::error::AppResult;
+
+const KEY_SEP: &str = "\u{1f}";
+
+/// Distinct visitors over the full range, keyed by a fixed SQL key expression.
+///
+/// `daily_campaigns.visitors` holds per-day distinct counts, which cannot be
+/// summed across days without double-counting returning visitors, so the
+/// visitor column of every multi-day report is recomputed from raw pageviews.
+pub(crate) async fn raw_unique_visitors(
+    db: &PgPool,
+    project_id: Uuid,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    key_expr: &'static str,
+) -> AppResult<HashMap<String, i64>> {
+    let sql = format!(
+        "SELECT {key_expr} AS k, COUNT(DISTINCT visitor_id)::bigint FROM pageviews \
+         WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 GROUP BY 1"
+    );
+    let rows: Vec<(String, i64)> = sqlx::query_as(&sql)
+        .bind(project_id)
+        .bind(start)
+        .bind(end)
+        .fetch_all(db)
+        .await?;
+    Ok(rows.into_iter().collect())
+}
+
+pub(crate) const CAMPAIGN_KEY_SQL: &str = "COALESCE(utm_source, '') || chr(31) || COALESCE(utm_medium, '') || chr(31) || COALESCE(utm_campaign, '')";
+const SOURCE_KEY_SQL: &str = "COALESCE(utm_source, '')";
+const MEDIUM_KEY_SQL: &str = "COALESCE(utm_medium, '')";
+
+pub(crate) fn campaign_key(source: &str, medium: &str, campaign: &str) -> String {
+    format!("{source}{KEY_SEP}{medium}{KEY_SEP}{campaign}")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CampaignStat {
@@ -110,6 +147,14 @@ pub async fn get_campaign_stats(
         .await?
     };
 
+    let uniques = raw_unique_visitors(db, project_id, start, end, CAMPAIGN_KEY_SQL).await?;
+    let rows: Vec<_> = rows
+        .into_iter()
+        .map(|(s, m, c, _v, se, pv, b)| {
+            let v = uniques.get(&campaign_key(&s, &m, &c)).copied().unwrap_or(0);
+            (s, m, c, v, se, pv, b)
+        })
+        .collect();
     let stats = rows
         .into_iter()
         .map(
@@ -268,6 +313,14 @@ pub async fn get_sources(
         .await?
     };
 
+    let uniques = raw_unique_visitors(db, project_id, start, end, SOURCE_KEY_SQL).await?;
+    let rows: Vec<_> = rows
+        .into_iter()
+        .map(|(k, _v, se, pv, b)| {
+            let v = uniques.get(&k).copied().unwrap_or(0);
+            (k, v, se, pv, b)
+        })
+        .collect();
     let stats = rows
         .into_iter()
         .map(|(source, visitors, sessions, pageviews, bounces)| {
@@ -360,6 +413,14 @@ pub async fn get_mediums(
         .await?
     };
 
+    let uniques = raw_unique_visitors(db, project_id, start, end, MEDIUM_KEY_SQL).await?;
+    let rows: Vec<_> = rows
+        .into_iter()
+        .map(|(k, _v, se, pv, b)| {
+            let v = uniques.get(&k).copied().unwrap_or(0);
+            (k, v, se, pv, b)
+        })
+        .collect();
     let stats = rows
         .into_iter()
         .map(|(medium, visitors, sessions, pageviews, bounces)| {

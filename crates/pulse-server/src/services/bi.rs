@@ -2018,6 +2018,7 @@ const BI_ALLOWED_TABLES: &[&str] = &[
     "survey_responses",
     "goal_conversions",
     "experiment_assignments",
+    "experiment_exposures",
     "feature_flag_evaluations",
     "session_recordings",
     "guide_events",

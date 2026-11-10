@@ -120,13 +120,48 @@ async fn create_partition(
     );
     let next_month = month_start + Months::new(1);
 
-    let sql = format!(
-        "CREATE TABLE IF NOT EXISTS {partition_name} PARTITION OF {parent_table} \
-         FOR VALUES FROM ('{month_start}') TO ('{next_month}')"
-    );
+    let default_name = format!("{parent_table}_default");
+    let has_default: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = 'r'")
+            .bind(&default_name)
+            .fetch_optional(db)
+            .await?;
 
-    sqlx::query(&sql).execute(db).await?;
-    info!("Created partition {partition_name}");
+    if has_default.is_none() {
+        let sql = format!(
+            "CREATE TABLE IF NOT EXISTS {partition_name} PARTITION OF {parent_table} \
+             FOR VALUES FROM ('{month_start}') TO ('{next_month}')"
+        );
+        sqlx::query(&sql).execute(db).await?;
+        info!("Created partition {partition_name}");
+        return Ok(());
+    }
+
+    // With a DEFAULT partition, Postgres refuses to create a range partition
+    // while the default still holds rows for that range (e.g. future-dated
+    // events). Move those rows into a detached table, then attach it.
+    let mut tx = db.begin().await?;
+    for sql in [
+        format!(
+            "CREATE TABLE {partition_name} (LIKE {parent_table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS)"
+        ),
+        format!(
+            "INSERT INTO {partition_name} SELECT * FROM {default_name} \
+             WHERE created_at >= '{month_start}' AND created_at < '{next_month}'"
+        ),
+        format!(
+            "DELETE FROM {default_name} \
+             WHERE created_at >= '{month_start}' AND created_at < '{next_month}'"
+        ),
+        format!(
+            "ALTER TABLE {parent_table} ATTACH PARTITION {partition_name} \
+             FOR VALUES FROM ('{month_start}') TO ('{next_month}')"
+        ),
+    ] {
+        sqlx::query(&sql).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    info!("Created partition {partition_name} (moved rows from {default_name})");
     Ok(())
 }
 

@@ -24,7 +24,43 @@ pub async fn get_umami_website_id(state: &SharedState, project_id: Uuid) -> Opti
     row.and_then(|r| r.0)
 }
 
+/// Unique visitors over an arbitrary range.
+///
+/// Daily rollups store per-day `COUNT(DISTINCT visitor_id)`, which cannot be
+/// summed across days (a visitor seen on 3 days would be counted 3 times), so
+/// range-level uniques are always computed from the raw pageviews table.
+pub async fn fetch_unique_visitors(
+    db: &PgPool,
+    project_id: Uuid,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(DISTINCT visitor_id)::bigint FROM pageviews \
+         WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3",
+    )
+    .bind(project_id)
+    .bind(start)
+    .bind(end)
+    .fetch_one(db)
+    .await?;
+    Ok(row.0)
+}
+
 pub async fn fetch_stats(
+    db: &PgPool,
+    project_id: Uuid,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    today: NaiveDate,
+) -> Result<StatsTuple, sqlx::Error> {
+    let mut stats = fetch_stats_additive(db, project_id, start, end, today).await?;
+    // Uniques are not additive across days; replace the summed value.
+    stats.1 = fetch_unique_visitors(db, project_id, start, end).await?;
+    Ok(stats)
+}
+
+async fn fetch_stats_additive(
     db: &PgPool,
     project_id: Uuid,
     start: DateTime<Utc>,
@@ -361,45 +397,25 @@ pub async fn fetch_devices(
     project_id: Uuid,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-    today: NaiveDate,
+    _today: NaiveDate,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<serde_json::Value>, sqlx::Error> {
-    let end_date = end.date_naive();
-
-    let rows: Vec<(String, String, String, i64)> = if end_date >= today {
-        sqlx::query_as(
-            r#"SELECT browser, os, device, SUM(visitors)::bigint FROM (
-                SELECT browser, os, device, visitors FROM daily_devices
-                WHERE project_id = $1 AND date >= $2::date AND date <= $3::date AND date < $6::date
-                UNION ALL
-                SELECT COALESCE(browser, 'Unknown'), COALESCE(os, 'Unknown'), COALESCE(device, 'desktop'), COUNT(DISTINCT visitor_id)::bigint
-                FROM sessions WHERE project_id = $1 AND first_at >= $6::date AND first_at <= $3
-                GROUP BY browser, os, device
-            ) combined GROUP BY browser, os, device ORDER BY 4 DESC LIMIT $4 OFFSET $5"#,
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .bind(limit)
-        .bind(offset)
-        .bind(today)
-        .fetch_all(db)
-        .await?
-    } else {
-        sqlx::query_as(
-            "SELECT browser, os, device, COALESCE(SUM(visitors), 0)::bigint FROM daily_devices \
-             WHERE project_id = $1 AND date >= $2::date AND date <= $3::date \
-             GROUP BY browser, os, device ORDER BY 4 DESC LIMIT $4 OFFSET $5",
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db)
-        .await?
-    };
+    // Visitors are distinct counts, so they are computed from raw sessions over
+    // the whole range rather than summed from per-day rollups.
+    let rows: Vec<(String, String, String, i64)> = sqlx::query_as(
+        r#"SELECT COALESCE(browser, 'Unknown'), COALESCE(os, 'Unknown'), COALESCE(device, 'desktop'),
+                  COUNT(DISTINCT visitor_id)::bigint
+           FROM sessions WHERE project_id = $1 AND first_at >= $2 AND first_at <= $3
+           GROUP BY 1, 2, 3 ORDER BY 4 DESC, 1, 2, 3 LIMIT $4 OFFSET $5"#,
+    )
+    .bind(project_id)
+    .bind(start)
+    .bind(end)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(db)
+    .await?;
 
     Ok(rows
         .iter()
@@ -419,45 +435,22 @@ pub async fn fetch_geo(
     project_id: Uuid,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-    today: NaiveDate,
+    _today: NaiveDate,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<serde_json::Value>, sqlx::Error> {
-    let end_date = end.date_naive();
-
-    let rows: Vec<(String, i64)> = if end_date >= today {
-        sqlx::query_as(
-            r#"SELECT country, SUM(visitors)::bigint FROM (
-                SELECT country, visitors FROM daily_geo
-                WHERE project_id = $1 AND date >= $2::date AND date <= $3::date AND date < $6::date
-                UNION ALL
-                SELECT COALESCE(country, 'XX'), COUNT(DISTINCT visitor_id)::bigint
-                FROM sessions WHERE project_id = $1 AND first_at >= $6::date AND first_at <= $3
-                GROUP BY country
-            ) combined GROUP BY country ORDER BY 2 DESC LIMIT $4 OFFSET $5"#,
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .bind(limit)
-        .bind(offset)
-        .bind(today)
-        .fetch_all(db)
-        .await?
-    } else {
-        sqlx::query_as(
-            "SELECT country, COALESCE(SUM(visitors), 0)::bigint FROM daily_geo \
-             WHERE project_id = $1 AND date >= $2::date AND date <= $3::date \
-             GROUP BY country ORDER BY 2 DESC LIMIT $4 OFFSET $5",
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db)
-        .await?
-    };
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        r#"SELECT COALESCE(country, 'XX'), COUNT(DISTINCT visitor_id)::bigint
+           FROM sessions WHERE project_id = $1 AND first_at >= $2 AND first_at <= $3
+           GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $4 OFFSET $5"#,
+    )
+    .bind(project_id)
+    .bind(start)
+    .bind(end)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(db)
+    .await?;
 
     Ok(rows
         .iter()

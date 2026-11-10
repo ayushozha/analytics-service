@@ -236,46 +236,17 @@ pub async fn export_devices_csv(
     end: DateTime<Utc>,
 ) -> Result<String, sqlx::Error> {
     let today = Utc::now().date_naive();
-    let end_date = end.date_naive();
-
-    let rows: Vec<(String, String, String, i64)> = if end_date >= today {
-        sqlx::query_as(
-            r#"SELECT browser, os, device, SUM(visitors)::bigint FROM (
-                SELECT browser, os, device, visitors FROM daily_devices
-                WHERE project_id = $1 AND date >= $2::date AND date <= $3::date AND date < $4::date
-                UNION ALL
-                SELECT COALESCE(browser, 'Unknown'), COALESCE(os, 'Unknown'), COALESCE(device, 'desktop'), COUNT(DISTINCT visitor_id)::bigint
-                FROM sessions WHERE project_id = $1 AND first_at >= $4::date AND first_at <= $3
-                GROUP BY browser, os, device
-            ) combined GROUP BY browser, os, device ORDER BY 4 DESC"#,
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .bind(today)
-        .fetch_all(db)
-        .await?
-    } else {
-        sqlx::query_as(
-            "SELECT browser, os, device, COALESCE(SUM(visitors), 0)::bigint FROM daily_devices \
-             WHERE project_id = $1 AND date >= $2::date AND date <= $3::date \
-             GROUP BY browser, os, device ORDER BY 4 DESC",
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .fetch_all(db)
-        .await?
-    };
-
+    let rows = crate::services::query::fetch_devices(db, project_id, start, end, today, 100_000, 0)
+        .await?;
     let mut csv = String::from("browser,os,device,visitors\n");
     for r in &rows {
+        let f = |k: &str| r[k].as_str().unwrap_or("").replace('"', "\"\"");
         csv.push_str(&format!(
             "\"{}\",\"{}\",\"{}\",{}\n",
-            r.0.replace('"', "\"\""),
-            r.1.replace('"', "\"\""),
-            r.2.replace('"', "\"\""),
-            r.3
+            f("browser"),
+            f("os"),
+            f("device"),
+            r["visitors"].as_i64().unwrap_or(0)
         ));
     }
     Ok(csv)
@@ -289,41 +260,15 @@ pub async fn export_geo_csv(
     end: DateTime<Utc>,
 ) -> Result<String, sqlx::Error> {
     let today = Utc::now().date_naive();
-    let end_date = end.date_naive();
-
-    let rows: Vec<(String, i64)> = if end_date >= today {
-        sqlx::query_as(
-            r#"SELECT country, SUM(visitors)::bigint FROM (
-                SELECT country, visitors FROM daily_geo
-                WHERE project_id = $1 AND date >= $2::date AND date <= $3::date AND date < $4::date
-                UNION ALL
-                SELECT COALESCE(country, 'XX'), COUNT(DISTINCT visitor_id)::bigint
-                FROM sessions WHERE project_id = $1 AND first_at >= $4::date AND first_at <= $3
-                GROUP BY country
-            ) combined GROUP BY country ORDER BY 2 DESC"#,
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .bind(today)
-        .fetch_all(db)
-        .await?
-    } else {
-        sqlx::query_as(
-            "SELECT country, COALESCE(SUM(visitors), 0)::bigint FROM daily_geo \
-             WHERE project_id = $1 AND date >= $2::date AND date <= $3::date \
-             GROUP BY country ORDER BY 2 DESC",
-        )
-        .bind(project_id)
-        .bind(start.naive_utc())
-        .bind(end.naive_utc())
-        .fetch_all(db)
-        .await?
-    };
-
+    let rows =
+        crate::services::query::fetch_geo(db, project_id, start, end, today, 100_000, 0).await?;
     let mut csv = String::from("country,visitors\n");
     for r in &rows {
-        csv.push_str(&format!("{},{}\n", r.0, r.1));
+        csv.push_str(&format!(
+            "{},{}\n",
+            r["country"].as_str().unwrap_or(""),
+            r["visitors"].as_i64().unwrap_or(0)
+        ));
     }
     Ok(csv)
 }
@@ -373,6 +318,21 @@ pub async fn export_campaigns_csv(
         .await?
     };
 
+    use crate::services::campaigns::{campaign_key, raw_unique_visitors, CAMPAIGN_KEY_SQL};
+    let uniques = raw_unique_visitors(db, project_id, start, end, CAMPAIGN_KEY_SQL)
+        .await
+        .map_err(|e| match e {
+            crate::error::AppError::Database(e) => e,
+            other => sqlx::Error::Protocol(other.to_string()),
+        })?;
+    let mut rows: Vec<_> = rows
+        .into_iter()
+        .map(|(s, m, c, _v, se, pv, b)| {
+            let v = uniques.get(&campaign_key(&s, &m, &c)).copied().unwrap_or(0);
+            (s, m, c, v, se, pv, b)
+        })
+        .collect();
+    rows.sort_by(|a, b| b.3.cmp(&a.3));
     let mut csv =
         String::from("utm_source,utm_medium,utm_campaign,visitors,sessions,pageviews,bounces\n");
     for r in &rows {

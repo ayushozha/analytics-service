@@ -131,7 +131,7 @@ echo ""
 if [[ "${1:-}" == "--with-redis-acl" ]]; then
     VPS_HOST="${VPS_HOST:-72.62.82.57}"
     VPS_USER="${VPS_USER:-ayush}"
-    REDIS_ADMIN_PASS="${REDIS_ADMIN_PASS:-P0UnWC3CC7fsxV0Dsz2CgyDra19aL5iK}"
+    REDIS_ADMIN_PASS="${REDIS_ADMIN_PASS:?Set REDIS_ADMIN_PASS}"
 
     REDIS_USER=$(echo "${PROJECT_NAME}" | tr '-' '_' | tr ' ' '_' | tr '[:upper:]' '[:lower:]')_user
     REDIS_PASS=$(openssl rand -base64 24 | tr -d '=+/')
