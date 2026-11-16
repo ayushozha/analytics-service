@@ -1394,3 +1394,28 @@ mod tests {
             .any(|node| node.id == "visitor:v_123" && node.metadata["last_seen_at"] == "now"));
     }
 }
+
+#[cfg(test)]
+mod person_update_tests {
+    use super::PersonUpdate;
+    use serde_json::json;
+
+    #[test]
+    fn extracts_set_set_once_unset() {
+        let u = PersonUpdate::from_event_data(Some(&json!({
+            "$set": {"plan": "pro"}, "$set_once": {"source": "ads"}, "$unset": ["email", 3], "other": 1
+        })))
+        .unwrap();
+        assert_eq!(u.set, json!({"plan": "pro"}));
+        assert_eq!(u.set_once, json!({"source": "ads"}));
+        assert_eq!(u.unset, vec!["email".to_string()]);
+    }
+
+    #[test]
+    fn ignores_events_without_person_updates() {
+        assert!(PersonUpdate::from_event_data(None).is_none());
+        assert!(PersonUpdate::from_event_data(Some(&json!({"plan": "pro"}))).is_none());
+        assert!(PersonUpdate::from_event_data(Some(&json!({"$set": "not-an-object"}))).is_none());
+        assert!(PersonUpdate::from_event_data(Some(&json!([1, 2]))).is_none());
+    }
+}
