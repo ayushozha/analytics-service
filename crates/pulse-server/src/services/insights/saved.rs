@@ -67,7 +67,11 @@ pub(crate) fn parse_relative(s: &str, now: DateTime<Utc>) -> Option<DateTime<Utc
         _ => {}
     }
     let rest = s.strip_prefix('-')?;
-    let (num, unit) = rest.split_at(rest.len().checked_sub(1)?);
+    // The unit is one ASCII letter; anything else (e.g. "-7日") is invalid.
+    let unit = rest.chars().last().filter(char::is_ascii_alphabetic)?;
+    let num = &rest[..rest.len() - 1];
+    let unit = unit.to_string();
+    let unit = unit.as_str();
     let n: i64 = num.parse().ok().filter(|n| (0..=10_000).contains(n))?;
     match unit {
         "h" => now.checked_sub_signed(Duration::hours(n)),
@@ -106,7 +110,9 @@ impl ParsedQuery {
             InsightKind::Paths => Self::Paths(serde_json::from_value(q).map_err(de)?),
         };
         match &parsed {
-            Self::Trends(t) | Self::Stickiness(t) | Self::Lifecycle(t) => trends::validate(t)?,
+            Self::Trends(t) => trends::validate(t)?,
+            Self::Stickiness(t) => stickiness::validate_common(t)?,
+            Self::Lifecycle(t) => stickiness::validate_lifecycle(t)?,
             Self::Funnels(f) => funnels::validate(f)?,
             Self::Retention(r) => retention::validate(r)?,
             Self::Paths(p) => paths::validate(p)?,
@@ -176,7 +182,9 @@ pub struct InsightInput {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct InsightPatch {
     pub name: Option<String>,
-    pub description: Option<String>,
+    /// Omitted: keep. `null`: clear. String: set.
+    #[serde(default, deserialize_with = "explicit_null")]
+    pub description: Option<Option<String>>,
     pub query: Option<Value>,
     pub tags: Option<Vec<String>>,
     pub favorited: Option<bool>,
@@ -194,6 +202,14 @@ pub struct InsightListQuery {
     pub order: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+/// Distinguish an omitted field (`None`) from an explicit `null` (`Some(None)`).
+fn explicit_null<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(d)?))
 }
 
 fn validate_meta(name: &str, tags: &[String]) -> AppResult<()> {
@@ -308,22 +324,37 @@ pub async fn list(db: &PgPool, project_id: Uuid, f: &InsightListQuery) -> AppRes
     .await?)
 }
 
-/// Apply a patch; query/name/description changes bump the version and clear the cache.
+/// Apply a patch; query/name/description changes bump the version and clear
+/// the cache. The row is locked for the read-merge-write so concurrent patches
+/// cannot revert each other.
 pub async fn update(
     db: &PgPool,
     project_id: Uuid,
     id: Uuid,
     p: &InsightPatch,
 ) -> AppResult<Insight> {
-    let cur = get(db, project_id, id).await?;
+    let mut tx = db.begin().await?;
+    let cur: Insight = sqlx::query_as(&format!(
+        "SELECT {INSIGHT_COLUMNS} FROM insights \
+         WHERE id = $1 AND project_id = $2 AND NOT deleted FOR UPDATE"
+    ))
+    .bind(id)
+    .bind(project_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Insight not found".into()))?;
     let name = p.name.clone().unwrap_or(cur.name.clone());
     let tags = p.tags.clone().unwrap_or(cur.tags.clone());
     validate_meta(&name, &tags)?;
     if let Some(q) = &p.query {
         ParsedQuery::parse(cur.kind, q, Utc::now())?;
     }
-    let versioned = p.query.is_some() || p.name.is_some() || p.description.is_some();
-    let mut tx = db.begin().await?;
+    let description = match &p.description {
+        Some(d) => d.clone(),
+        None => cur.description.clone(),
+    };
+    let query_changed = p.query.as_ref().is_some_and(|q| *q != cur.query);
+    let versioned = query_changed || name != cur.name || description != cur.description;
     let updated: Insight = sqlx::query_as(&format!(
         "UPDATE insights SET name = $3, description = $4, query = $5, tags = $6, favorited = $7, \
          version = version + $8, \
@@ -335,12 +366,12 @@ pub async fn update(
     .bind(id)
     .bind(project_id)
     .bind(name.trim())
-    .bind(p.description.clone().or(cur.description.clone()))
+    .bind(&description)
     .bind(p.query.clone().unwrap_or(cur.query.clone()))
     .bind(&tags)
     .bind(p.favorited.unwrap_or(cur.favorited))
     .bind(i32::from(versioned))
-    .bind(p.query.is_some())
+    .bind(query_changed)
     .fetch_one(&mut *tx)
     .await?;
     if versioned {
@@ -422,7 +453,8 @@ pub async fn restore(db: &PgPool, project_id: Uuid, id: Uuid, version: i32) -> A
         id,
         &InsightPatch {
             name: Some(v.name),
-            description: v.description,
+            // Restore the snapshot exactly, including an absent description.
+            description: Some(v.description),
             query: Some(v.query),
             ..Default::default()
         },
@@ -456,11 +488,14 @@ pub async fn run_saved(
     if !force {
         if let Some(at) = insight.last_refresh_at {
             if now - at < Duration::seconds(INSIGHT_CACHE_TTL_SECS) {
-                let cached: Option<(Option<Value>,)> =
-                    sqlx::query_as("SELECT cached_result FROM insights WHERE id = $1")
-                        .bind(insight.id)
-                        .fetch_optional(db)
-                        .await?;
+                // Only a cache produced by this exact query version is valid.
+                let cached: Option<(Option<Value>,)> = sqlx::query_as(
+                    "SELECT cached_result FROM insights WHERE id = $1 AND version = $2",
+                )
+                .bind(insight.id)
+                .bind(insight.version)
+                .fetch_optional(db)
+                .await?;
                 if let Some((Some(result),)) = cached {
                     touch_viewed(db, insight.id).await?;
                     return Ok(InsightResult {
@@ -474,12 +509,15 @@ pub async fn run_saved(
         }
     }
     let result = parsed.run(db, project_id).await?;
+    // Never store a result under a newer query version (a concurrent patch).
     sqlx::query(
-        "UPDATE insights SET cached_result = $2, last_refresh_at = $3, last_viewed_at = $3 WHERE id = $1",
+        "UPDATE insights SET cached_result = $2, last_refresh_at = $3, last_viewed_at = $3 \
+         WHERE id = $1 AND version = $4",
     )
     .bind(insight.id)
     .bind(&result)
     .bind(now)
+    .bind(insight.version)
     .execute(db)
     .await?;
     Ok(InsightResult {
@@ -533,6 +571,8 @@ mod tests {
         );
         assert!(parse_relative("-7x", n).is_none());
         assert!(parse_relative("soon", n).is_none());
+        assert!(parse_relative("-7日", n).is_none());
+        assert!(parse_relative("-", n).is_none());
     }
 
     #[test]
@@ -557,5 +597,11 @@ mod tests {
         assert!(ParsedQuery::parse(InsightKind::Retention, &r, now()).is_ok());
         let p = json!({"date_from": "-7d"});
         assert!(ParsedQuery::parse(InsightKind::Paths, &p, now()).is_ok());
+        let two = json!({"series": [{"event": "a"}, {"event": "b"}], "date_from": "-7d"});
+        assert!(ParsedQuery::parse(InsightKind::Lifecycle, &two, now()).is_err());
+        assert!(ParsedQuery::parse(InsightKind::Stickiness, &two, now()).is_ok());
+        let bd =
+            json!({"series": [{"event": "a"}], "date_from": "-7d", "breakdown": {"property": "x"}});
+        assert!(ParsedQuery::parse(InsightKind::Stickiness, &bd, now()).is_err());
     }
 }
