@@ -24,6 +24,10 @@ pub const DEFAULT_EDGE_LIMIT: usize = 50;
 pub const MAX_EDGE_LIMIT: usize = 1_000;
 pub const MAX_CLEANING_RULES: usize = 50;
 pub const MAX_PATH_EVENTS: i64 = 2_000_000;
+/// Cleaned items are capped at the path column's size after every rule, so
+/// chained replacements cannot grow an item without bound.
+pub const MAX_ITEM_LEN: usize = 2_048;
+pub const MAX_ALIAS_LEN: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,6 +124,15 @@ pub fn validate(q: &PathsQuery) -> AppResult<()> {
             "edge_limit must be 1-{MAX_EDGE_LIMIT}"
         )));
     }
+    if q.path_cleaning_rules
+        .iter()
+        .any(|r| r.alias.len() > MAX_ALIAS_LEN)
+        || q.path_groupings.iter().any(|g| g.len() > MAX_ALIAS_LEN)
+    {
+        return Err(bad_request(format!(
+            "cleaning aliases and groupings must be at most {MAX_ALIAS_LEN} characters"
+        )));
+    }
     if q.path_cleaning_rules.len() + q.path_groupings.len() > MAX_CLEANING_RULES {
         return Err(bad_request(format!(
             "at most {MAX_CLEANING_RULES} cleaning rules and groupings"
@@ -203,6 +216,16 @@ async fn load_paths(db: &PgPool, project_id: Uuid, q: &PathsQuery) -> AppResult<
         .map_err(|e| AppError::Internal(format!("paths worker failed: {e}")))
 }
 
+fn truncate_chars(s: &mut String, max_bytes: usize) {
+    if s.len() > max_bytes {
+        let mut cut = max_bytes;
+        while !s.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        s.truncate(cut);
+    }
+}
+
 /// Cleaning rules then wildcard groupings, compiled once per query.
 struct Cleaner {
     rules: Vec<(regex::Regex, String)>,
@@ -233,6 +256,7 @@ impl Cleaner {
         for (re, alias) in &self.rules {
             if re.is_match(&item) {
                 item = re.replace_all(&item, alias.as_str()).into_owned();
+                truncate_chars(&mut item, MAX_ITEM_LEN);
             }
         }
         for (re, alias) in &self.groups {
@@ -490,6 +514,20 @@ mod tests {
         assert_eq!(c.clean("/about".into()), "/about");
         let bad = q(json!({"path_cleaning_rules": [{"regex": "(", "alias": "x"}]}));
         assert!(Cleaner::new(&bad).is_err());
+    }
+
+    #[test]
+    fn chained_rules_cannot_blow_up_items() {
+        let rules: Vec<Value> = (0..50)
+            .map(|_| json!({"regex": ".", "alias": "xx"}))
+            .collect();
+        let qq = q(json!({"path_cleaning_rules": rules}));
+        assert!(validate(&qq).is_ok());
+        let c = Cleaner::new(&qq).unwrap();
+        assert_eq!(c.clean("/".into()).len(), MAX_ITEM_LEN);
+        let long_alias =
+            q(json!({"path_cleaning_rules": [{"regex": ".", "alias": "x".repeat(300)}]}));
+        assert!(validate(&long_alias).is_err());
     }
 
     #[test]
