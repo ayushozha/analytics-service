@@ -14,11 +14,15 @@
 pub mod filters;
 pub mod formula;
 pub mod funnels;
+pub mod retention;
+pub mod stickiness;
 pub mod trends;
+
+use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Postgres, QueryBuilder};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use filters::Joins;
@@ -165,4 +169,21 @@ pub(crate) fn push_event_source(qb: &mut QueryBuilder<'_, Postgres>, src: &Event
         qb.push_bind(src.project_id);
         qb.push(" AND up.visitor_id = ev.visitor_id");
     }
+}
+
+/// `visitor_id -> (user_id, traits)` for a page of actors.
+pub(crate) async fn load_profiles(
+    db: &PgPool,
+    project_id: Uuid,
+    visitor_ids: &[String],
+) -> Result<HashMap<String, (Option<String>, serde_json::Value)>, sqlx::Error> {
+    let rows: Vec<(String, Option<String>, serde_json::Value)> = sqlx::query_as(
+        "SELECT visitor_id, user_id, traits FROM user_profiles \
+         WHERE project_id = $1 AND visitor_id = ANY($2)",
+    )
+    .bind(project_id)
+    .bind(visitor_ids)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(|(v, u, t)| (v, (u, t))).collect())
 }

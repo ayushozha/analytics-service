@@ -1,10 +1,12 @@
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
+use serde::Deserialize;
 
 use crate::error::AppResult;
 use crate::middleware::auth::AuthenticatedProject;
 use crate::services;
 use crate::services::insights::funnels::{FunnelActorsQuery, FunnelsQuery};
+use crate::services::insights::retention::{RetentionActorsQuery, RetentionQuery};
 use crate::services::insights::trends::{TrendsActorsQuery, TrendsQuery};
 use crate::state::SharedState;
 
@@ -84,5 +86,124 @@ pub async fn funnel_actors(
     authorize(&state, &auth, true).await?;
     let result =
         services::insights::funnels::run_funnel_actors(&state.db, auth.project_id, &query).await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/retention
+pub async fn retention(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(query): Json<RetentionQuery>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, query.reads_person_properties()).await?;
+    let result =
+        services::insights::retention::run_retention(&state.db, auth.project_id, &query).await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/retention/actors
+pub async fn retention_actors(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(query): Json<RetentionActorsQuery>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, true).await?;
+    let result =
+        services::insights::retention::run_retention_actors(&state.db, auth.project_id, &query)
+            .await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/stickiness
+pub async fn stickiness(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(query): Json<TrendsQuery>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, query.reads_person_properties()).await?;
+    let result =
+        services::insights::stickiness::run_stickiness(&state.db, auth.project_id, &query).await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/lifecycle
+pub async fn lifecycle(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(query): Json<TrendsQuery>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, query.reads_person_properties()).await?;
+    let result =
+        services::insights::stickiness::run_lifecycle(&state.db, auth.project_id, &query).await?;
+    Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StickinessActorsBody {
+    pub query: TrendsQuery,
+    #[serde(default)]
+    pub series: usize,
+    /// Number of active intervals (the clicked bar).
+    pub intervals: i64,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LifecycleActorsBody {
+    pub query: TrendsQuery,
+    /// Bucket start as returned in `days`.
+    pub day: String,
+    /// new, returning, resurrecting or dormant.
+    pub status: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+fn default_limit() -> usize {
+    100
+}
+
+// POST /api/v1/insights/stickiness/actors
+pub async fn stickiness_actors(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(b): Json<StickinessActorsBody>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, true).await?;
+    let result = services::insights::stickiness::run_stickiness_actors(
+        &state.db,
+        auth.project_id,
+        &b.query,
+        b.series,
+        b.intervals,
+        b.limit,
+        b.offset,
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/lifecycle/actors
+pub async fn lifecycle_actors(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(b): Json<LifecycleActorsBody>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, true).await?;
+    let result = services::insights::stickiness::run_lifecycle_actors(
+        &state.db,
+        auth.project_id,
+        &b.query,
+        &b.day,
+        &b.status,
+        b.limit,
+        b.offset,
+    )
+    .await?;
     Ok(Json(result))
 }

@@ -28,7 +28,7 @@ const MAX_BREAKDOWN_CANDIDATES: i64 = 10_000;
 /// Top breakdown values shared by every series of the query, ranked by total
 /// events across all series, plus whether an "other" bucket is needed. One
 /// shared set keeps formula operands and the "other" bucket comparable.
-async fn shared_breakdown(
+pub(crate) async fn shared_breakdown(
     db: &PgPool,
     project_id: Uuid,
     q: &TrendsQuery,
@@ -75,7 +75,7 @@ impl Interval {
     }
 
     /// Shortest possible length, used to bound the bucket count.
-    fn min_seconds(self) -> i64 {
+    pub(crate) fn min_seconds(self) -> i64 {
         match self {
             Interval::Minute => 60,
             Interval::Hour => 3_600,
@@ -320,7 +320,7 @@ pub fn validate(q: &TrendsQuery) -> AppResult<()> {
 }
 
 /// Shared context for building one series' SQL.
-struct Ctx<'a> {
+pub(crate) struct Ctx<'a> {
     project_id: Uuid,
     q: &'a TrendsQuery,
     series: &'a Series,
@@ -330,7 +330,7 @@ struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    fn new(
+    pub(crate) fn new(
         project_id: Uuid,
         q: &'a TrendsQuery,
         series: &'a Series,
@@ -360,7 +360,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// `FROM (<virtual events>) ev [joins] WHERE <filters>`
-    fn push_from_where(&self, qb: &mut QueryBuilder<'_, Postgres>) -> AppResult<()> {
+    pub(crate) fn push_from_where(&self, qb: &mut QueryBuilder<'_, Postgres>) -> AppResult<()> {
         let events: Vec<String> = self.series.event.iter().cloned().collect();
         push_event_source(
             qb,
@@ -381,7 +381,7 @@ impl<'a> Ctx<'a> {
         Ok(())
     }
 
-    fn push_bucket(&self, qb: &mut QueryBuilder<'_, Postgres>) {
+    pub(crate) fn push_bucket(&self, qb: &mut QueryBuilder<'_, Postgres>) {
         qb.push("to_char(date_trunc(");
         qb.push_bind(self.q.interval.as_sql());
         qb.push(", ev.created_at AT TIME ZONE ");
@@ -390,7 +390,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// Raw breakdown value with missing values mapped to `$$_none`.
-    fn push_breakdown_raw(&self, qb: &mut QueryBuilder<'_, Postgres>) {
+    pub(crate) fn push_breakdown_raw(&self, qb: &mut QueryBuilder<'_, Postgres>) {
         match &self.q.breakdown {
             Some(b) => {
                 qb.push("COALESCE(");
@@ -580,7 +580,7 @@ async fn run_period(
     })
 }
 
-fn series_label(q: &TrendsQuery, i: usize) -> String {
+pub(crate) fn series_label(q: &TrendsQuery, i: usize) -> String {
     let s = &q.series[i];
     s.custom_name
         .clone()
@@ -588,7 +588,7 @@ fn series_label(q: &TrendsQuery, i: usize) -> String {
         .unwrap_or_else(|| "All events".to_string())
 }
 
-fn breakdown_output(bd: &str) -> Option<String> {
+pub(crate) fn breakdown_output(bd: &str) -> Option<String> {
     match bd {
         "" | BREAKDOWN_NONE => None,
         other => Some(other.to_string()),

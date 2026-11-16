@@ -172,6 +172,30 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/insights/funnels/actors",
             axum::routing::post(routes::insights::funnel_actors),
         )
+        .route(
+            "/api/v1/insights/retention",
+            axum::routing::post(routes::insights::retention),
+        )
+        .route(
+            "/api/v1/insights/retention/actors",
+            axum::routing::post(routes::insights::retention_actors),
+        )
+        .route(
+            "/api/v1/insights/stickiness",
+            axum::routing::post(routes::insights::stickiness),
+        )
+        .route(
+            "/api/v1/insights/stickiness/actors",
+            axum::routing::post(routes::insights::stickiness_actors),
+        )
+        .route(
+            "/api/v1/insights/lifecycle",
+            axum::routing::post(routes::insights::lifecycle),
+        )
+        .route(
+            "/api/v1/insights/lifecycle/actors",
+            axum::routing::post(routes::insights::lifecycle_actors),
+        )
         // Funnels
         .route(
             "/api/v1/funnels",
