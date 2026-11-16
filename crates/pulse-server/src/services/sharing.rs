@@ -11,10 +11,16 @@ pub struct SharedDashboard {
     pub project_id: Uuid,
     pub name: String,
     pub token: String,
+    /// Never returned by the API.
+    #[serde(skip_serializing)]
     pub password_hash: Option<String>,
     pub modules: Vec<String>,
     pub expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    /// Shared dashboard (dashboards v2), if this link points at one.
+    pub dashboard_id: Option<Uuid>,
+    /// Shared saved insight, if this link points at one.
+    pub insight_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +45,7 @@ fn hash_password(password: &str) -> String {
 }
 
 /// Create a new shared dashboard link.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_shared_dashboard(
     db: &PgPool,
     project_id: Uuid,
@@ -46,14 +53,16 @@ pub async fn create_shared_dashboard(
     modules: &[String],
     password: Option<&str>,
     expires_at: Option<DateTime<Utc>>,
+    dashboard_id: Option<Uuid>,
+    insight_id: Option<Uuid>,
 ) -> Result<SharedDashboard, sqlx::Error> {
     let token = generate_token();
     let password_hash = password.map(hash_password);
 
     let dashboard: SharedDashboard = sqlx::query_as(
-        "INSERT INTO shared_dashboards (project_id, name, token, password_hash, modules, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
-         RETURNING id, project_id, name, token, password_hash, modules, expires_at, created_at",
+        "INSERT INTO shared_dashboards (project_id, name, token, password_hash, modules, expires_at, dashboard_id, insight_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         RETURNING id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id",
     )
     .bind(project_id)
     .bind(name)
@@ -61,6 +70,8 @@ pub async fn create_shared_dashboard(
     .bind(&password_hash)
     .bind(modules)
     .bind(expires_at)
+    .bind(dashboard_id)
+    .bind(insight_id)
     .fetch_one(db)
     .await?;
 
@@ -73,7 +84,7 @@ pub async fn list_shared_dashboards(
     project_id: Uuid,
 ) -> Result<Vec<SharedDashboard>, sqlx::Error> {
     let dashboards: Vec<SharedDashboard> = sqlx::query_as(
-        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at \
+        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id \
          FROM shared_dashboards WHERE project_id = $1 ORDER BY created_at DESC",
     )
     .bind(project_id)
@@ -99,13 +110,12 @@ pub async fn delete_shared_dashboard(
 }
 
 /// Resolve a shared dashboard by its token.
-#[allow(dead_code)]
 pub async fn resolve_shared_token(
     db: &PgPool,
     token: &str,
 ) -> Result<Option<SharedDashboard>, sqlx::Error> {
     let dashboard: Option<SharedDashboard> = sqlx::query_as(
-        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at \
+        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id \
          FROM shared_dashboards WHERE token = $1",
     )
     .bind(token)
@@ -124,13 +134,17 @@ pub async fn resolve_shared_token(
     Ok(dashboard)
 }
 
-/// Verify password for a shared dashboard.
-#[allow(dead_code)]
+/// Verify password for a shared dashboard (constant-time comparison).
 pub fn verify_shared_password(dashboard: &SharedDashboard, password: &str) -> bool {
     match &dashboard.password_hash {
         Some(stored_hash) => {
-            let provided_hash = hash_password(password);
-            stored_hash == &provided_hash
+            let provided = hash_password(password);
+            stored_hash.len() == provided.len()
+                && stored_hash
+                    .bytes()
+                    .zip(provided.bytes())
+                    .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+                    == 0
         }
         None => true, // No password set, always passes
     }

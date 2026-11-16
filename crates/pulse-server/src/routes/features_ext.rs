@@ -1847,6 +1847,10 @@ pub struct CreateSharedDashboard {
     pub modules: Option<Vec<String>>,
     pub password: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
+    /// Share a dashboard (v2) instead of module stats.
+    pub dashboard_id: Option<Uuid>,
+    /// Share a single saved insight.
+    pub insight_id: Option<Uuid>,
 }
 
 pub async fn create_shared_dashboard(
@@ -1863,6 +1867,18 @@ pub async fn create_shared_dashboard(
     )
     .await?;
 
+    if input.dashboard_id.is_some() && input.insight_id.is_some() {
+        return Err(AppError::BadRequest(
+            "share either a dashboard or an insight, not both".into(),
+        ));
+    }
+    // The shared resource must belong to this project.
+    if let Some(id) = input.dashboard_id {
+        services::dashboards::get(&state.db, auth.project_id, id).await?;
+    }
+    if let Some(id) = input.insight_id {
+        services::insights::saved::get(&state.db, auth.project_id, id).await?;
+    }
     let name = input.name.unwrap_or_else(|| "Shared Dashboard".to_string());
     let modules = input.modules.unwrap_or_default();
     let dashboard = services::sharing::create_shared_dashboard(
@@ -1872,6 +1888,8 @@ pub async fn create_shared_dashboard(
         &modules,
         input.password.as_deref(),
         input.expires_at,
+        input.dashboard_id,
+        input.insight_id,
     )
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;

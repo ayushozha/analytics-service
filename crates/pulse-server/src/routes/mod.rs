@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod dashboard;
+pub mod dashboards;
 pub mod docs;
 pub mod features;
 pub mod features_ext;

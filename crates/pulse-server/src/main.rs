@@ -231,6 +231,43 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/saved-insights/{id}/versions/{version}/restore",
             axum::routing::post(routes::saved_insights::restore),
         )
+        // Dashboards v2 (v1 paths remain the legacy custom dashboards used by the SDK)
+        .route(
+            "/api/v2/dashboards",
+            get(routes::dashboards::list).post(routes::dashboards::create),
+        )
+        .route(
+            "/api/v2/dashboard-templates",
+            get(routes::dashboards::templates),
+        )
+        .route(
+            "/api/v2/dashboards/{id}",
+            get(routes::dashboards::get)
+                .patch(routes::dashboards::update)
+                .delete(routes::dashboards::delete),
+        )
+        .route("/api/v2/dashboards/{id}/run", get(routes::dashboards::run))
+        .route(
+            "/api/v2/dashboards/{id}/duplicate",
+            axum::routing::post(routes::dashboards::duplicate),
+        )
+        .route(
+            "/api/v2/dashboards/{id}/layouts",
+            axum::routing::put(routes::dashboards::update_layouts),
+        )
+        .route(
+            "/api/v2/dashboards/{id}/tiles",
+            axum::routing::post(routes::dashboards::add_tile),
+        )
+        .route(
+            "/api/v2/dashboards/{id}/tiles/{tile_id}",
+            axum::routing::patch(routes::dashboards::update_tile)
+                .delete(routes::dashboards::delete_tile),
+        )
+        .route(
+            "/api/v2/dashboards/{id}/tiles/{tile_id}/move",
+            axum::routing::post(routes::dashboards::move_tile),
+        )
         .route(
             "/api/v1/annotations",
             get(routes::saved_insights::list_annotations)
@@ -1117,6 +1154,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/embed/bi/{token}",
             get(routes::features_ext::resolve_bi_embed),
         )
+        .route("/api/shared/{token}", get(routes::dashboards::shared))
         .route("/api/docs", get(routes::docs::serve_docs))
         .route("/docs", get(routes::docs::redirect_docs));
 
