@@ -16,6 +16,7 @@ pub mod formula;
 pub mod funnels;
 pub mod paths;
 pub mod retention;
+pub mod saved;
 pub mod stickiness;
 pub mod trends;
 

@@ -16,7 +16,7 @@ const INSIGHTS_MODULE: &str = "core";
 /// Person properties and profile data are governed by the `identity` module.
 const IDENTITY_MODULE: &str = "identity";
 
-async fn authorize(
+pub(crate) async fn authorize(
     state: &SharedState,
     auth: &AuthenticatedProject,
     reads_person_data: bool,
