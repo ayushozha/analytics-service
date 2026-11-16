@@ -272,6 +272,12 @@ pub async fn export_visitor_data(
         "js_errors": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM js_errors WHERE project_id = $1 AND visitor_id = $2 ORDER BY created_at DESC) t", project_id, visitor_id).await?,
         "log_entries": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM log_entries WHERE project_id = $1 AND visitor_id = $2 ORDER BY created_at DESC) t", project_id, visitor_id).await?,
         "click_events": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM click_events WHERE project_id = $1 AND visitor_id = $2 ORDER BY created_at DESC) t", project_id, visitor_id).await?,
+        "feature_flag_evaluations": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM feature_flag_evaluations WHERE project_id = $1 AND visitor_id = $2) t", project_id, visitor_id).await?,
+        "guide_events": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM guide_events WHERE project_id = $1 AND visitor_id = $2) t", project_id, visitor_id).await?,
+        "event_quality_violations": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM event_quality_violations WHERE project_id = $1 AND visitor_id = $2) t", project_id, visitor_id).await?,
+        "llm_traces": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM llm_traces WHERE project_id = $1 AND visitor_id = $2) t", project_id, visitor_id).await?,
+        "account_memberships": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM account_memberships WHERE project_id = $1 AND visitor_id = $2) t", project_id, visitor_id).await?,
+        "cohort_memberships": fetch_json_array(db, "SELECT COALESCE(jsonb_agg(jsonb_build_object('cohort_id', c.id, 'cohort', c.name, 'added_at', cp.added_at)), '[]'::jsonb) FROM cohort_people cp JOIN person_cohorts c ON c.id = cp.cohort_id WHERE c.project_id = $1 AND cp.visitor_id = $2", project_id, visitor_id).await?,
     });
 
     Ok(serde_json::json!({
@@ -294,30 +300,39 @@ pub async fn export_visitor_data(
     }))
 }
 
+/// Every table keyed by `(project_id, visitor_id)`, children first. Used for
+/// GDPR delete and person merge so no table is missed.
+pub const VISITOR_TABLES: &[&str] = &[
+    "session_recordings",
+    "survey_responses",
+    "experiment_assignments",
+    "experiment_exposures",
+    "goal_conversions",
+    "web_vitals",
+    "scroll_depths",
+    "search_queries",
+    "outlinks",
+    "js_errors",
+    "log_entries",
+    "click_events",
+    "feature_flag_evaluations",
+    "guide_events",
+    "event_quality_violations",
+    "llm_traces",
+    "account_memberships",
+    "pageviews",
+    "events",
+    "sessions",
+    "user_aliases",
+    "user_profiles",
+];
+
 pub async fn delete_visitor_data(
     db: &PgPool,
     project_id: Uuid,
     visitor_id: &str,
 ) -> AppResult<DsarDeleteResult> {
-    let tables = [
-        "session_recordings",
-        "survey_responses",
-        "experiment_assignments",
-        "experiment_exposures",
-        "goal_conversions",
-        "web_vitals",
-        "scroll_depths",
-        "search_queries",
-        "outlinks",
-        "js_errors",
-        "log_entries",
-        "click_events",
-        "pageviews",
-        "events",
-        "sessions",
-        "user_aliases",
-        "user_profiles",
-    ];
+    let tables = VISITOR_TABLES;
 
     let mut deleted = serde_json::Map::new();
     for table in tables {
@@ -329,6 +344,19 @@ pub async fn delete_visitor_data(
             .await?;
         deleted.insert(table.to_string(), serde_json::json!(result.rows_affected()));
     }
+    // Cohort memberships carry no project_id; scope them through the cohort.
+    let result = sqlx::query(
+        "DELETE FROM cohort_people cp USING person_cohorts c \
+         WHERE cp.cohort_id = c.id AND c.project_id = $1 AND cp.visitor_id = $2",
+    )
+    .bind(project_id)
+    .bind(visitor_id)
+    .execute(db)
+    .await?;
+    deleted.insert(
+        "cohort_people".to_string(),
+        serde_json::json!(result.rows_affected()),
+    );
 
     Ok(DsarDeleteResult {
         visitor_id: visitor_id.to_string(),

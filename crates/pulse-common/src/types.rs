@@ -103,7 +103,14 @@ pub struct EventPayload {
 pub struct IdentifyPayload {
     #[serde(default)]
     pub user_id: Option<String>,
+    /// Person properties to set (overwrites existing values).
     pub traits: serde_json::Value,
+    /// Person properties set only if not already present (`$set_once`).
+    #[serde(default)]
+    pub set_once: Option<serde_json::Value>,
+    /// Person properties to remove (`$unset`).
+    #[serde(default)]
+    pub unset: Option<Vec<String>>,
     #[serde(default)]
     pub account_id: Option<String>,
     #[serde(default)]

@@ -201,6 +201,12 @@ async fn process_collect_envelope(
         });
     }
 
+    // Events from a merged-away visitor id belong to the person it was merged into.
+    let mut envelope = envelope;
+    envelope.visitor_id =
+        crate::services::persons::resolve_visitor(state, auth.project_id, &envelope.visitor_id)
+            .await;
+
     let now = envelope
         .timestamp
         .map(|ts| chrono::DateTime::from_timestamp_millis(ts).unwrap_or_else(Utc::now))
@@ -304,6 +310,20 @@ async fn process_collect_envelope(
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
+            // `$set` / `$set_once` / `$unset` in event properties update the person.
+            if let Some(update) = identity::PersonUpdate::from_event_data(payload.data.as_ref()) {
+                identity::apply_person_update(
+                    &state.db,
+                    auth.project_id,
+                    &envelope.visitor_id,
+                    None,
+                    &update,
+                    now,
+                    false,
+                )
+                .await?;
+            }
+
             let event = BufferedEvent {
                 project_id: auth.project_id,
                 session_id,
@@ -379,6 +399,8 @@ async fn process_collect_envelope(
                 &envelope.visitor_id,
                 payload.user_id.as_deref(),
                 &payload.traits,
+                payload.set_once.as_ref(),
+                payload.unset.as_deref().unwrap_or_default(),
                 payload.account_id.as_deref(),
                 payload.account_name.as_deref(),
                 payload.account_traits.as_ref(),
