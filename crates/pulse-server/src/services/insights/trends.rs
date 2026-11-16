@@ -15,8 +15,8 @@ use super::filters::{
     FilterGroup, Joins, PropertyFilter,
 };
 use super::{
-    bad_request, formula, map_query_error, PropertyType, BREAKDOWN_OTHER, DEFAULT_BREAKDOWN_LIMIT,
-    MAX_BREAKDOWN_LIMIT, MAX_BUCKETS, MAX_SERIES, PAGEVIEW_EVENT,
+    bad_request, formula, map_query_error, push_event_source, EventSource, PropertyType,
+    BREAKDOWN_OTHER, DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT, MAX_BUCKETS, MAX_SERIES,
 };
 use crate::error::AppResult;
 
@@ -361,56 +361,17 @@ impl<'a> Ctx<'a> {
 
     /// `FROM (<virtual events>) ev [joins] WHERE <filters>`
     fn push_from_where(&self, qb: &mut QueryBuilder<'_, Postgres>) -> AppResult<()> {
-        qb.push(" FROM (");
-        let event = self.series.event.as_deref();
-        let want_pageviews = event.is_none() || event == Some(PAGEVIEW_EVENT);
-        let want_events = event != Some(PAGEVIEW_EVENT);
-        if want_pageviews {
-            qb.push(
-                "SELECT '$pageview'::text AS event, p.visitor_id, p.session_id, p.created_at, \
-                 jsonb_strip_nulls(jsonb_build_object('path', p.path, 'title', p.title, \
-                 'referrer', p.referrer, 'referrer_domain', p.referrer_domain, \
-                 'utm_source', p.utm_source, 'utm_medium', p.utm_medium, \
-                 'utm_campaign', p.utm_campaign, 'utm_content', p.utm_content, \
-                 'utm_term', p.utm_term)) AS properties \
-                 FROM pageviews p WHERE p.project_id = ",
-            );
-            qb.push_bind(self.project_id);
-            qb.push(" AND p.created_at >= ");
-            qb.push_bind(self.from);
-            qb.push(" AND p.created_at < ");
-            qb.push_bind(self.to);
-        }
-        if want_pageviews && want_events {
-            qb.push(" UNION ALL ");
-        }
-        if want_events {
-            qb.push(
-                "SELECT e.event_name::text AS event, e.visitor_id, e.session_id, e.created_at, \
-                 (CASE WHEN jsonb_typeof(e.event_data) = 'object' THEN e.event_data ELSE '{}'::jsonb END) \
-                 || jsonb_strip_nulls(jsonb_build_object('path', e.path, \
-                 'revenue', e.revenue_amount, 'revenue_currency', e.revenue_currency)) AS properties \
-                 FROM events e WHERE e.project_id = ",
-            );
-            qb.push_bind(self.project_id);
-            qb.push(" AND e.created_at >= ");
-            qb.push_bind(self.from);
-            qb.push(" AND e.created_at < ");
-            qb.push_bind(self.to);
-            if let Some(name) = event {
-                qb.push(" AND e.event_name = ");
-                qb.push_bind(name.to_string());
-            }
-        }
-        qb.push(") ev");
-        if self.joins.session {
-            qb.push(" LEFT JOIN sessions s ON s.id = ev.session_id");
-        }
-        if self.joins.person {
-            qb.push(" LEFT JOIN user_profiles up ON up.project_id = ");
-            qb.push_bind(self.project_id);
-            qb.push(" AND up.visitor_id = ev.visitor_id");
-        }
+        let events: Vec<String> = self.series.event.iter().cloned().collect();
+        push_event_source(
+            qb,
+            &EventSource {
+                project_id: self.project_id,
+                from: self.from,
+                to: self.to,
+                events: (!events.is_empty()).then_some(events.as_slice()),
+                joins: self.joins,
+            },
+        );
         qb.push(" WHERE TRUE");
         push_and_filters(qb, &self.q.properties)?;
         push_and_filters(qb, &self.series.properties)?;
