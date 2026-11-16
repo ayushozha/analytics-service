@@ -38,3 +38,6 @@ CREATE INDEX IF NOT EXISTS idx_dashboard_tiles_dashboard ON dashboard_tiles(dash
 -- Share links can now point at a dashboard or a saved insight.
 ALTER TABLE shared_dashboards ADD COLUMN IF NOT EXISTS dashboard_id UUID REFERENCES dashboards(id) ON DELETE CASCADE;
 ALTER TABLE shared_dashboards ADD COLUMN IF NOT EXISTS insight_id UUID REFERENCES insights(id) ON DELETE CASCADE;
+-- Whether the link's creator could read person data; the public view never
+-- exposes more than its creator was allowed to see.
+ALTER TABLE shared_dashboards ADD COLUMN IF NOT EXISTS allow_person_data BOOLEAN NOT NULL DEFAULT false;

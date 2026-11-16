@@ -452,6 +452,18 @@ pub async fn move_tile(
 ) -> AppResult<Tile> {
     tile_owned(db, project_id, dashboard_id, tile_id).await?;
     get(db, project_id, to).await?;
+    if to != dashboard_id {
+        let (n,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM dashboard_tiles WHERE dashboard_id = $1")
+                .bind(to)
+                .fetch_one(db)
+                .await?;
+        if n >= MAX_TILES {
+            return Err(AppError::BadRequest(format!(
+                "the destination dashboard already has {MAX_TILES} tiles"
+            )));
+        }
+    }
     Ok(sqlx::query_as(&format!(
         "UPDATE dashboard_tiles SET dashboard_id = $2, cache_key = NULL, cached_result = NULL, \
          updated_at = NOW() WHERE id = $1 RETURNING {TILE_COLUMNS}"

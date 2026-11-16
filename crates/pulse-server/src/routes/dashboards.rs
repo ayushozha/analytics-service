@@ -273,11 +273,15 @@ pub async fn shared(
         }
     }
 
-    // Whoever created the link chose to share this view; no module gating.
-    let open_gate = |_: &ParsedQuery| None;
+    // The public view never exposes more than the link's creator could read.
+    let allow_person = link.allow_person_data;
+    let gate = move |q: &ParsedQuery| {
+        (!allow_person && q.reads_person_properties())
+            .then(|| "this tile uses person data, which this link may not show".to_string())
+    };
     if let Some(dashboard_id) = link.dashboard_id {
         let d = dashboards::get(&state.db, link.project_id, dashboard_id).await?;
-        let tiles = dashboards::run(&state.db, link.project_id, &d, false, &open_gate).await?;
+        let tiles = dashboards::run(&state.db, link.project_id, &d, false, &gate).await?;
         return Ok(Json(
             json!({ "type": "dashboard", "name": link.name, "dashboard": d, "tiles": tiles }),
         ));
@@ -285,6 +289,9 @@ pub async fn shared(
     if let Some(insight_id) = link.insight_id {
         let insight = saved::get(&state.db, link.project_id, insight_id).await?;
         let parsed = saved::parse_saved(&insight)?;
+        if let Some(msg) = gate(&parsed) {
+            return Err(AppError::Forbidden(msg));
+        }
         let r = saved::run_saved(&state.db, link.project_id, insight, &parsed, false).await?;
         return Ok(Json(
             json!({ "type": "insight", "name": link.name, "insight": r }),

@@ -1872,13 +1872,39 @@ pub async fn create_shared_dashboard(
             "share either a dashboard or an insight, not both".into(),
         ));
     }
-    // The shared resource must belong to this project.
+    // The shared resource must belong to this project, and a link may never
+    // expose more than its creator can query: insight/dashboard links need
+    // `core` + `dashboards`, and person data is only served if the creator
+    // has `identity` access (recorded on the link, enforced at view time).
+    let shares_insights = input.dashboard_id.is_some() || input.insight_id.is_some();
+    if shares_insights {
+        for module in ["core", "dashboards"] {
+            services::modules::require_module_read(
+                &state,
+                auth.project_id,
+                module,
+                &auth.allowed_modules,
+            )
+            .await?;
+        }
+    }
     if let Some(id) = input.dashboard_id {
         services::dashboards::get(&state.db, auth.project_id, id).await?;
     }
     if let Some(id) = input.insight_id {
-        services::insights::saved::get(&state.db, auth.project_id, id).await?;
+        let insight = services::insights::saved::get(&state.db, auth.project_id, id).await?;
+        let parsed = services::insights::saved::parse_saved(&insight)?;
+        // Sharing an insight that needs identity access requires it now.
+        crate::routes::insights::authorize(&state, &auth, parsed.reads_person_properties()).await?;
     }
+    let allow_person_data = services::modules::require_module_read(
+        &state,
+        auth.project_id,
+        "identity",
+        &auth.allowed_modules,
+    )
+    .await
+    .is_ok();
     let name = input.name.unwrap_or_else(|| "Shared Dashboard".to_string());
     let modules = input.modules.unwrap_or_default();
     let dashboard = services::sharing::create_shared_dashboard(
@@ -1890,6 +1916,7 @@ pub async fn create_shared_dashboard(
         input.expires_at,
         input.dashboard_id,
         input.insight_id,
+        allow_person_data,
     )
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;

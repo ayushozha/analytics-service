@@ -21,6 +21,8 @@ pub struct SharedDashboard {
     pub dashboard_id: Option<Uuid>,
     /// Shared saved insight, if this link points at one.
     pub insight_id: Option<Uuid>,
+    /// The creator could read person data (identity module).
+    pub allow_person_data: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,14 +57,15 @@ pub async fn create_shared_dashboard(
     expires_at: Option<DateTime<Utc>>,
     dashboard_id: Option<Uuid>,
     insight_id: Option<Uuid>,
+    allow_person_data: bool,
 ) -> Result<SharedDashboard, sqlx::Error> {
     let token = generate_token();
     let password_hash = password.map(hash_password);
 
     let dashboard: SharedDashboard = sqlx::query_as(
-        "INSERT INTO shared_dashboards (project_id, name, token, password_hash, modules, expires_at, dashboard_id, insight_id) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
-         RETURNING id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id",
+        "INSERT INTO shared_dashboards (project_id, name, token, password_hash, modules, expires_at, dashboard_id, insight_id, allow_person_data) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+         RETURNING id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id, allow_person_data",
     )
     .bind(project_id)
     .bind(name)
@@ -72,6 +75,7 @@ pub async fn create_shared_dashboard(
     .bind(expires_at)
     .bind(dashboard_id)
     .bind(insight_id)
+    .bind(allow_person_data)
     .fetch_one(db)
     .await?;
 
@@ -84,7 +88,7 @@ pub async fn list_shared_dashboards(
     project_id: Uuid,
 ) -> Result<Vec<SharedDashboard>, sqlx::Error> {
     let dashboards: Vec<SharedDashboard> = sqlx::query_as(
-        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id \
+        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id, allow_person_data \
          FROM shared_dashboards WHERE project_id = $1 ORDER BY created_at DESC",
     )
     .bind(project_id)
@@ -115,7 +119,7 @@ pub async fn resolve_shared_token(
     token: &str,
 ) -> Result<Option<SharedDashboard>, sqlx::Error> {
     let dashboard: Option<SharedDashboard> = sqlx::query_as(
-        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id \
+        "SELECT id, project_id, name, token, password_hash, modules, expires_at, created_at, dashboard_id, insight_id, allow_person_data \
          FROM shared_dashboards WHERE token = $1",
     )
     .bind(token)
