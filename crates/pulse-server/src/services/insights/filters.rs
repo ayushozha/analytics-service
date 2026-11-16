@@ -75,12 +75,33 @@ pub struct FilterGroup {
 pub struct Joins {
     pub session: bool,
     pub person: bool,
+    /// A cohort filter is used (needs the `cohorts` module).
+    pub cohort: bool,
+}
+
+/// Which protected data a query reads, for module authorization.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DataNeeds {
+    /// Person (profile) properties: `identity` module.
+    pub person: bool,
+    /// Cohort membership: `cohorts` module.
+    pub cohorts: bool,
+}
+
+impl From<Joins> for DataNeeds {
+    fn from(j: Joins) -> Self {
+        Self {
+            person: j.person,
+            cohorts: j.cohort,
+        }
+    }
 }
 
 impl Joins {
     pub fn add(&mut self, t: PropertyType) {
         match t {
-            PropertyType::Event | PropertyType::Cohort => {}
+            PropertyType::Event => {}
+            PropertyType::Cohort => self.cohort = true,
             PropertyType::Session => self.session = true,
             PropertyType::Person => self.person = true,
         }

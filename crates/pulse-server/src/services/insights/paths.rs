@@ -102,8 +102,8 @@ impl PathsQuery {
         j
     }
 
-    pub fn reads_person_properties(&self) -> bool {
-        self.joins().person
+    pub fn data_needs(&self) -> super::filters::DataNeeds {
+        self.joins().into()
     }
 }
 

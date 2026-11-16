@@ -28,6 +28,8 @@ use crate::services::insights::{
 pub const RECALC_AFTER_MINUTES: i64 = 30;
 pub const RECALC_INTERVAL_SECS: u64 = 300;
 pub const MAX_STATIC_MEMBERS: usize = 100_000;
+/// A calculation claim older than this is assumed dead (crashed instance).
+pub const CLAIM_LEASE_MINUTES: i32 = 10;
 const MAX_CRITERIA: usize = 50;
 const MAX_NESTING: usize = 5;
 
@@ -453,7 +455,9 @@ fn push_criterion(
                     let stopped = *value == Behavior::StoppedPerformingEvent;
                     // stopped: did in [start, recent) and not in [recent, now]
                     // restarted: did in [recent, now], not in [start, recent), and before start
-                    qb.push("(SELECT DISTINCT ev.visitor_id");
+                    // ((A) EXCEPT (B)) [INTERSECT (C)]: INTERSECT binds tighter
+                    // than EXCEPT, so the difference is parenthesised.
+                    qb.push("((SELECT DISTINCT ev.visitor_id");
                     if stopped {
                         push_events(qb, project_id, key, event_properties, start, recent)?;
                     } else {
@@ -465,7 +469,7 @@ fn push_criterion(
                     } else {
                         push_events(qb, project_id, key, event_properties, start, recent)?;
                     }
-                    qb.push(")");
+                    qb.push("))");
                     if !stopped {
                         qb.push(" INTERSECT (SELECT DISTINCT ev.visitor_id");
                         push_events(qb, project_id, key, event_properties, epoch, start)?;
@@ -689,10 +693,11 @@ pub async fn calculate(db: &PgPool, project_id: Uuid, id: Uuid) -> AppResult<Coh
     let (g, _) = parse_filters(&c.filters)?;
     // Claim the cohort so concurrent calculations (other instances) skip it.
     let claimed: Option<(Uuid,)> = sqlx::query_as(
-        "UPDATE person_cohorts SET is_calculating = true WHERE id = $1 \
-         AND (NOT is_calculating OR updated_at < NOW() - interval '10 minutes') RETURNING id",
+        "UPDATE person_cohorts SET is_calculating = true, calc_started_at = NOW() WHERE id = $1 \
+         AND (NOT is_calculating OR calc_started_at < NOW() - make_interval(mins => $2)) RETURNING id",
     )
     .bind(id)
+    .bind(CLAIM_LEASE_MINUTES)
     .fetch_optional(db)
     .await?;
     if claimed.is_none() {
@@ -757,10 +762,11 @@ pub fn start_recalc_task(state: crate::state::SharedState) {
             ticker.tick().await;
             let due: Vec<(Uuid, Uuid)> = match sqlx::query_as(
                 "SELECT id, project_id FROM person_cohorts WHERE NOT deleted AND NOT is_static \
-                 AND NOT is_calculating \
+                 AND (NOT is_calculating OR calc_started_at < NOW() - make_interval(mins => $2)) \
                  AND (last_calculated_at IS NULL OR last_calculated_at < NOW() - make_interval(mins => $1))",
             )
             .bind(RECALC_AFTER_MINUTES as i32)
+            .bind(CLAIM_LEASE_MINUTES)
             .fetch_all(&state.db)
             .await
             {

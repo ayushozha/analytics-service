@@ -1895,7 +1895,7 @@ pub async fn create_shared_dashboard(
         let insight = services::insights::saved::get(&state.db, auth.project_id, id).await?;
         let parsed = services::insights::saved::parse_saved(&insight)?;
         // Sharing an insight that needs identity access requires it now.
-        crate::routes::insights::authorize(&state, &auth, parsed.reads_person_properties()).await?;
+        crate::routes::insights::authorize(&state, &auth, parsed.data_needs()).await?;
     }
     let allow_person_data = services::modules::require_module_read(
         &state,

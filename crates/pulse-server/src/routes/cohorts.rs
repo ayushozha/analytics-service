@@ -10,12 +10,15 @@ use crate::error::{AppError, AppResult};
 use crate::middleware::auth::AuthenticatedProject;
 use crate::routes::insights::{authorize, LifecycleActorsBody, StickinessActorsBody};
 use crate::services;
+use crate::services::insights::filters::DataNeeds;
 use crate::services::insights::{funnels, paths, retention, stickiness, trends};
 use crate::services::person_cohorts::{self, CohortInput, CohortPatch, MAX_STATIC_MEMBERS};
 use crate::state::SharedState;
 
 const MODULE: &str = "cohorts";
 const IDENTITY_MODULE: &str = "identity";
+/// Page size used when exporting members as CSV.
+const CSV_PAGE: i64 = 10_000;
 /// Page size used when collecting actors into a static cohort.
 const ACTOR_PAGE: usize = 1_000;
 
@@ -162,15 +165,24 @@ pub async fn people_csv(
     Path(id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     can_read_people(&state, &auth).await?;
-    let page = person_cohorts::members(&state.db, auth.project_id, id, 10_000, 0).await?;
     let mut csv = String::from("visitor_id,user_id,traits\n");
-    for m in page["data"].as_array().into_iter().flatten() {
-        csv.push_str(&format!(
-            "{},{},{}\n",
-            csv_field(m["visitor_id"].as_str().unwrap_or_default()),
-            csv_field(m["user_id"].as_str().unwrap_or_default()),
-            csv_field(&m["traits"].to_string()),
-        ));
+    let mut offset = 0;
+    loop {
+        let page =
+            person_cohorts::members(&state.db, auth.project_id, id, CSV_PAGE, offset).await?;
+        let rows = page["data"].as_array().cloned().unwrap_or_default();
+        for m in &rows {
+            csv.push_str(&format!(
+                "{},{},{}\n",
+                csv_field(m["visitor_id"].as_str().unwrap_or_default()),
+                csv_field(m["user_id"].as_str().unwrap_or_default()),
+                csv_field(&m["traits"].to_string()),
+            ));
+        }
+        if (rows.len() as i64) < CSV_PAGE {
+            break;
+        }
+        offset += CSV_PAGE;
     }
     Ok((
         [
@@ -324,7 +336,15 @@ pub async fn from_actors(
 ) -> AppResult<impl IntoResponse> {
     can_write(&state, &auth).await?;
     // Actor queries read person data, exactly like the /actors endpoints.
-    authorize(&state, &auth, true).await?;
+    authorize(
+        &state,
+        &auth,
+        DataNeeds {
+            person: true,
+            cohorts: true,
+        },
+    )
+    .await?;
     let mut ids: Vec<String> = Vec::new();
     loop {
         let page =

@@ -5,6 +5,7 @@ use serde::Deserialize;
 use crate::error::AppResult;
 use crate::middleware::auth::AuthenticatedProject;
 use crate::services;
+use crate::services::insights::filters::DataNeeds;
 use crate::services::insights::funnels::{FunnelActorsQuery, FunnelsQuery};
 use crate::services::insights::paths::{PathsActorsQuery, PathsQuery};
 use crate::services::insights::retention::{RetentionActorsQuery, RetentionQuery};
@@ -16,29 +17,39 @@ const INSIGHTS_MODULE: &str = "core";
 /// Person properties and profile data are governed by the `identity` module.
 const IDENTITY_MODULE: &str = "identity";
 
+/// Cohort membership is governed by the `cohorts` module.
+const COHORTS_MODULE: &str = "cohorts";
+
+/// Insights need `core`; reading person properties needs `identity`;
+/// filtering by cohort needs `cohorts`.
 pub(crate) async fn authorize(
     state: &SharedState,
     auth: &AuthenticatedProject,
-    reads_person_data: bool,
+    needs: DataNeeds,
 ) -> AppResult<()> {
     auth.require_scope("query")?;
-    services::modules::require_module_read(
-        state,
-        auth.project_id,
-        INSIGHTS_MODULE,
-        &auth.allowed_modules,
-    )
-    .await?;
-    if reads_person_data {
+    let mut modules = vec![INSIGHTS_MODULE];
+    if needs.person {
+        modules.push(IDENTITY_MODULE);
+    }
+    if needs.cohorts {
+        modules.push(COHORTS_MODULE);
+    }
+    for module in modules {
         services::modules::require_module_read(
             state,
             auth.project_id,
-            IDENTITY_MODULE,
+            module,
             &auth.allowed_modules,
         )
         .await?;
     }
     Ok(())
+}
+
+/// Actor endpoints always return person data.
+fn actor_needs(q: DataNeeds) -> DataNeeds {
+    DataNeeds { person: true, ..q }
 }
 
 // POST /api/v1/insights/trends
@@ -47,7 +58,7 @@ pub async fn trends(
     auth: AuthenticatedProject,
     Json(query): Json<TrendsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, query.reads_person_properties()).await?;
+    authorize(&state, &auth, query.data_needs()).await?;
     let result = services::insights::trends::run_trends(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
 }
@@ -59,7 +70,7 @@ pub async fn trends_actors(
     Json(query): Json<TrendsActorsQuery>,
 ) -> AppResult<impl IntoResponse> {
     // Actors always include user ids and profile traits.
-    authorize(&state, &auth, true).await?;
+    authorize(&state, &auth, actor_needs(query.query.data_needs())).await?;
     let result =
         services::insights::trends::run_trends_actors(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
@@ -71,7 +82,7 @@ pub async fn funnels(
     auth: AuthenticatedProject,
     Json(query): Json<FunnelsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, query.reads_person_properties()).await?;
+    authorize(&state, &auth, query.data_needs()).await?;
     let result =
         services::insights::funnels::run_funnel(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
@@ -84,7 +95,7 @@ pub async fn funnel_actors(
     Json(query): Json<FunnelActorsQuery>,
 ) -> AppResult<impl IntoResponse> {
     // Actors always include user ids and profile traits.
-    authorize(&state, &auth, true).await?;
+    authorize(&state, &auth, actor_needs(query.query.data_needs())).await?;
     let result =
         services::insights::funnels::run_funnel_actors(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
@@ -96,7 +107,7 @@ pub async fn retention(
     auth: AuthenticatedProject,
     Json(query): Json<RetentionQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, query.reads_person_properties()).await?;
+    authorize(&state, &auth, query.data_needs()).await?;
     let result =
         services::insights::retention::run_retention(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
@@ -108,7 +119,7 @@ pub async fn retention_actors(
     auth: AuthenticatedProject,
     Json(query): Json<RetentionActorsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, true).await?;
+    authorize(&state, &auth, actor_needs(query.query.data_needs())).await?;
     let result =
         services::insights::retention::run_retention_actors(&state.db, auth.project_id, &query)
             .await?;
@@ -121,7 +132,7 @@ pub async fn stickiness(
     auth: AuthenticatedProject,
     Json(query): Json<TrendsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, query.reads_person_properties()).await?;
+    authorize(&state, &auth, query.data_needs()).await?;
     let result =
         services::insights::stickiness::run_stickiness(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
@@ -133,7 +144,7 @@ pub async fn lifecycle(
     auth: AuthenticatedProject,
     Json(query): Json<TrendsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, query.reads_person_properties()).await?;
+    authorize(&state, &auth, query.data_needs()).await?;
     let result =
         services::insights::stickiness::run_lifecycle(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
@@ -175,7 +186,7 @@ pub async fn stickiness_actors(
     auth: AuthenticatedProject,
     Json(b): Json<StickinessActorsBody>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, true).await?;
+    authorize(&state, &auth, actor_needs(b.query.data_needs())).await?;
     let result = services::insights::stickiness::run_stickiness_actors(
         &state.db,
         auth.project_id,
@@ -195,7 +206,7 @@ pub async fn lifecycle_actors(
     auth: AuthenticatedProject,
     Json(b): Json<LifecycleActorsBody>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, true).await?;
+    authorize(&state, &auth, actor_needs(b.query.data_needs())).await?;
     let result = services::insights::stickiness::run_lifecycle_actors(
         &state.db,
         auth.project_id,
@@ -215,7 +226,7 @@ pub async fn paths(
     auth: AuthenticatedProject,
     Json(query): Json<PathsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, query.reads_person_properties()).await?;
+    authorize(&state, &auth, query.data_needs()).await?;
     let result = services::insights::paths::run_paths(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
 }
@@ -226,7 +237,7 @@ pub async fn paths_actors(
     auth: AuthenticatedProject,
     Json(query): Json<PathsActorsQuery>,
 ) -> AppResult<impl IntoResponse> {
-    authorize(&state, &auth, true).await?;
+    authorize(&state, &auth, actor_needs(query.query.data_needs())).await?;
     let result =
         services::insights::paths::run_paths_actors(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))

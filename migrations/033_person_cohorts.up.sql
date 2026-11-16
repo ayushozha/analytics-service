@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS person_cohorts (
     filters JSONB NOT NULL DEFAULT '{}'::jsonb,
     member_count INT NOT NULL DEFAULT 0,
     is_calculating BOOLEAN NOT NULL DEFAULT false,
+    -- When the current calculation claim was taken (lease for crash recovery).
+    calc_started_at TIMESTAMPTZ,
     last_calculated_at TIMESTAMPTZ,
     last_error TEXT,
     deleted BOOLEAN NOT NULL DEFAULT false,

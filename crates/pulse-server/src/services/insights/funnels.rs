@@ -161,9 +161,9 @@ fn default_window() -> i64 {
 }
 
 impl FunnelsQuery {
-    /// True if any filter or the breakdown reads person (profile) properties.
-    pub fn reads_person_properties(&self) -> bool {
-        self.joins().person
+    /// Protected data the query reads (person properties, cohorts).
+    pub fn data_needs(&self) -> super::filters::DataNeeds {
+        self.joins().into()
     }
 
     fn window_secs(&self) -> f64 {
