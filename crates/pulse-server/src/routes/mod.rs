@@ -5,5 +5,6 @@ pub mod features;
 pub mod features_ext;
 pub mod health;
 pub mod ingest;
+pub mod insights;
 pub mod query;
 pub mod script;

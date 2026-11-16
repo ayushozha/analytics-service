@@ -155,6 +155,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/devices", get(routes::query::get_devices))
         .route("/api/v1/geo", get(routes::query::get_geo))
         .route("/api/v1/realtime", get(routes::query::get_realtime))
+        // Insights engine (PostHog-style TrendsQuery)
+        .route(
+            "/api/v1/insights/trends",
+            axum::routing::post(routes::insights::trends),
+        )
+        .route(
+            "/api/v1/insights/trends/actors",
+            axum::routing::post(routes::insights::trends_actors),
+        )
         // Funnels
         .route(
             "/api/v1/funnels",
