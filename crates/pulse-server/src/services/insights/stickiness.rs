@@ -130,32 +130,37 @@ async fn lifecycle_data(
         return Err(bad_request("lifecycle takes exactly one series"));
     }
     let labels = bucket_labels(db, &q.interval, &q.timezone, q.date_from, q.date_to).await?;
-    // Start of the bucket before the range, so the first bucket can be
-    // classified as returning/resurrecting/dormant.
-    let (prev_start, prev_label): (DateTime<Utc>, String) = sqlx::query_as(
-        "SELECT (date_trunc($1, $2 AT TIME ZONE $3) - ('1 ' || $1)::interval) AT TIME ZONE $3, \
-         to_char(date_trunc($1, $2 AT TIME ZONE $3) - ('1 ' || $1)::interval, 'YYYY-MM-DD\"T\"HH24:MI:SS')",
-    )
-    .bind(q.interval.as_sql())
-    .bind(q.date_from)
-    .bind(&q.timezone)
-    .fetch_one(db)
-    .await
-    .map_err(map_query_error)?;
-
-    let series = &q.series[0];
-    let ctx = Ctx::new(project_id, q, series, prev_start, q.date_to);
-    let mut qb = QueryBuilder::<Postgres>::new("SELECT DISTINCT ev.visitor_id, ");
-    ctx.push_bucket(&mut qb);
-    ctx.push_from_where(&mut qb)?;
-    let rows: Vec<(String, String)> = qb
-        .build_query_as()
-        .fetch_all(db)
+    // The bucket before the range is loaded separately so the first bucket can
+    // be classified (returning/resurrecting/dormant) without counting events
+    // that fall in the first bucket but before `date_from`.
+    let (prev_start, first_start, prev_label): (DateTime<Utc>, DateTime<Utc>, String) =
+        sqlx::query_as(
+            "SELECT (date_trunc($1, $2 AT TIME ZONE $3) - ('1 ' || $1)::interval) AT TIME ZONE $3, \
+             date_trunc($1, $2 AT TIME ZONE $3) AT TIME ZONE $3, \
+             to_char(date_trunc($1, $2 AT TIME ZONE $3) - ('1 ' || $1)::interval, 'YYYY-MM-DD\"T\"HH24:MI:SS')",
+        )
+        .bind(q.interval.as_sql())
+        .bind(q.date_from)
+        .bind(&q.timezone)
+        .fetch_one(db)
         .await
         .map_err(map_query_error)?;
+
+    let series = &q.series[0];
     let mut active: HashMap<String, HashSet<String>> = HashMap::new();
-    for (v, b) in rows {
-        active.entry(v).or_default().insert(b);
+    for (from, to) in [(prev_start, first_start), (q.date_from, q.date_to)] {
+        let ctx = Ctx::new(project_id, q, series, from, to);
+        let mut qb = QueryBuilder::<Postgres>::new("SELECT DISTINCT ev.visitor_id, ");
+        ctx.push_bucket(&mut qb);
+        ctx.push_from_where(&mut qb)?;
+        let rows: Vec<(String, String)> = qb
+            .build_query_as()
+            .fetch_all(db)
+            .await
+            .map_err(map_query_error)?;
+        for (v, b) in rows {
+            active.entry(v).or_default().insert(b);
+        }
     }
 
     // First-ever matching event per active visitor (all history up to date_to).
@@ -303,7 +308,14 @@ pub async fn run_stickiness_actors(
     let mut ids: Vec<String> = active_intervals(db, &ctx)
         .await?
         .into_iter()
-        .filter(|(_, k)| *k == intervals)
+        // Cumulative bars count visitors active on at least N intervals.
+        .filter(|(_, k)| {
+            if q.cumulative {
+                *k >= intervals
+            } else {
+                *k == intervals
+            }
+        })
         .map(|(v, _)| v)
         .collect();
     ids.sort();
