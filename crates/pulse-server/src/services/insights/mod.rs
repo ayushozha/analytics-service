@@ -54,6 +54,8 @@ pub enum PropertyType {
     Session,
     /// A trait of the visitor's profile (set via identify).
     Person,
+    /// Membership of a person cohort (`key` = cohort id). Filters only.
+    Cohort,
 }
 
 /// Session columns that can be filtered or broken down on.
@@ -126,7 +128,7 @@ pub(crate) fn push_event_source(qb: &mut QueryBuilder<'_, Postgres>, src: &Event
     qb.push(" FROM (");
     if want_pageviews {
         qb.push(
-            "SELECT '$pageview'::text AS event, p.visitor_id, p.session_id, p.created_at, \
+            "SELECT '$pageview'::text AS event, p.project_id, p.visitor_id, p.session_id, p.created_at, \
              jsonb_strip_nulls(jsonb_build_object('path', p.path, 'title', p.title, \
              'referrer', p.referrer, 'referrer_domain', p.referrer_domain, \
              'utm_source', p.utm_source, 'utm_medium', p.utm_medium, \
@@ -145,7 +147,7 @@ pub(crate) fn push_event_source(qb: &mut QueryBuilder<'_, Postgres>, src: &Event
     }
     if want_events {
         qb.push(
-            "SELECT e.event_name::text AS event, e.visitor_id, e.session_id, e.created_at, \
+            "SELECT e.event_name::text AS event, e.project_id, e.visitor_id, e.session_id, e.created_at, \
              (CASE WHEN jsonb_typeof(e.event_data) = 'object' THEN e.event_data ELSE '{}'::jsonb END) \
              || jsonb_strip_nulls(jsonb_build_object('path', e.path, \
              'revenue', e.revenue_amount, 'revenue_currency', e.revenue_currency)) AS properties \
