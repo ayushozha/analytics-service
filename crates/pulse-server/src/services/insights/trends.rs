@@ -22,6 +22,35 @@ use crate::error::AppResult;
 
 /// Label used for events whose breakdown property is missing.
 const BREAKDOWN_NONE: &str = "$$_none";
+/// Distinct breakdown values considered per series when ranking.
+const MAX_BREAKDOWN_CANDIDATES: i64 = 10_000;
+
+/// Top breakdown values shared by every series of the query, ranked by total
+/// events across all series, plus whether an "other" bucket is needed. One
+/// shared set keeps formula operands and the "other" bucket comparable.
+async fn shared_breakdown(
+    db: &PgPool,
+    project_id: Uuid,
+    q: &TrendsQuery,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> AppResult<(Vec<String>, bool)> {
+    let Some(b) = &q.breakdown else {
+        return Ok((Vec::new(), false));
+    };
+    let limit = b.limit.unwrap_or(DEFAULT_BREAKDOWN_LIMIT) as usize;
+    let mut totals: HashMap<String, i64> = HashMap::new();
+    for series in &q.series {
+        let ctx = Ctx::new(project_id, q, series, from, to);
+        for (bd, n) in ctx.breakdown_counts(db).await? {
+            *totals.entry(bd).or_default() += n;
+        }
+    }
+    let mut ranked: Vec<(String, i64)> = totals.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let more = ranked.len() > limit;
+    Ok((ranked.into_iter().take(limit).map(|r| r.0).collect(), more))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -35,7 +64,7 @@ pub enum Interval {
 }
 
 impl Interval {
-    fn as_sql(self) -> &'static str {
+    pub(crate) fn as_sql(self) -> &'static str {
         match self {
             Interval::Minute => "minute",
             Interval::Hour => "hour",
@@ -189,6 +218,27 @@ pub struct TrendsQuery {
     pub smoothing_intervals: Option<usize>,
 }
 
+impl TrendsQuery {
+    /// True if the query reads person (profile) properties anywhere.
+    pub fn reads_person_properties(&self) -> bool {
+        let mut j = Joins::default();
+        j.add_filters(&self.properties);
+        if let Some(g) = &self.filter_group {
+            j.add_group(g);
+        }
+        if let Some(b) = &self.breakdown {
+            j.add(b.property_type);
+        }
+        for s in &self.series {
+            j.add_filters(&s.properties);
+            if s.math.needs_property() {
+                j.add(s.math_property_type);
+            }
+        }
+        j.person
+    }
+}
+
 fn default_tz() -> String {
     "UTC".to_string()
 }
@@ -328,7 +378,7 @@ impl<'a> Ctx<'a> {
             qb.push_bind(self.project_id);
             qb.push(" AND p.created_at >= ");
             qb.push_bind(self.from);
-            qb.push(" AND p.created_at <= ");
+            qb.push(" AND p.created_at < ");
             qb.push_bind(self.to);
         }
         if want_pageviews && want_events {
@@ -345,7 +395,7 @@ impl<'a> Ctx<'a> {
             qb.push_bind(self.project_id);
             qb.push(" AND e.created_at >= ");
             qb.push_bind(self.from);
-            qb.push(" AND e.created_at <= ");
+            qb.push(" AND e.created_at < ");
             qb.push_bind(self.to);
             if let Some(name) = event {
                 qb.push(" AND e.event_name = ");
@@ -422,29 +472,18 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    /// Breakdown values ranked by volume. Returns the top `limit` values and
-    /// whether more exist (which yields an "other" bucket).
-    async fn top_breakdown_values(&self, db: &PgPool) -> AppResult<(Vec<String>, bool)> {
-        let Some(b) = &self.q.breakdown else {
-            return Ok((Vec::new(), false));
-        };
-        let limit = b.limit.unwrap_or(DEFAULT_BREAKDOWN_LIMIT);
+    /// Event counts per breakdown value for this series (capped).
+    async fn breakdown_counts(&self, db: &PgPool) -> AppResult<Vec<(String, i64)>> {
         let mut qb = QueryBuilder::<Postgres>::new("SELECT ");
         self.push_breakdown_raw(&mut qb);
         qb.push(" AS bd, COUNT(*) AS n");
         self.push_from_where(&mut qb)?;
         qb.push(" GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ");
-        qb.push_bind(limit + 1);
-        let rows: Vec<(String, i64)> = qb
-            .build_query_as()
+        qb.push_bind(MAX_BREAKDOWN_CANDIDATES);
+        qb.build_query_as()
             .fetch_all(db)
             .await
-            .map_err(map_query_error)?;
-        let more = rows.len() as i64 > limit;
-        Ok((
-            rows.into_iter().take(limit as usize).map(|r| r.0).collect(),
-            more,
-        ))
+            .map_err(map_query_error)
     }
 
     /// Rows of `(bucket, breakdown_value, value)` for this series.
@@ -499,23 +538,24 @@ impl<'a> Ctx<'a> {
     }
 }
 
-/// Bucket starts between `from` and `to` in the query timezone.
-async fn bucket_labels(
+/// Bucket starts covering the half-open range `[from, to)` in `timezone`.
+pub(crate) async fn bucket_labels(
     db: &PgPool,
-    q: &TrendsQuery,
+    interval: &Interval,
+    timezone: &str,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> AppResult<Vec<String>> {
-    let unit = q.interval.as_sql();
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT to_char(g, 'YYYY-MM-DD\"T\"HH24:MI:SS') FROM generate_series(\
-            date_trunc($1, $2 AT TIME ZONE $4), date_trunc($1, $3 AT TIME ZONE $4), \
+            date_trunc($1, $2 AT TIME ZONE $4), \
+            date_trunc($1, ($3 - interval '1 microsecond') AT TIME ZONE $4), \
             ('1 ' || $1)::interval) g",
     )
-    .bind(unit)
+    .bind(interval.as_sql())
     .bind(from)
     .bind(to)
-    .bind(&q.timezone)
+    .bind(timezone)
     .fetch_all(db)
     .await
     .map_err(map_query_error)?;
@@ -536,16 +576,16 @@ async fn run_period(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> AppResult<PeriodResult> {
-    let days = bucket_labels(db, q, from, to).await?;
+    let days = bucket_labels(db, &q.interval, &q.timezone, from, to).await?;
     let index: HashMap<&str, usize> = days
         .iter()
         .enumerate()
         .map(|(i, d)| (d.as_str(), i))
         .collect();
+    let (top, more) = shared_breakdown(db, project_id, q, from, to).await?;
     let mut series_out = Vec::with_capacity(q.series.len());
     for series in &q.series {
         let ctx = Ctx::new(project_id, q, series, from, to);
-        let (top, more) = ctx.top_breakdown_values(db).await?;
         let rows = ctx.rows(db, &top).await?;
         let mut by_bd: HashMap<String, Vec<f64>> = HashMap::new();
         for (bucket, bd, value) in rows {
@@ -694,8 +734,9 @@ pub async fn run_trends(
     let mut results = period_results(q, current, q.compare.then_some("current"), expr.as_ref());
     if q.compare {
         let len = q.date_to - q.date_from;
-        let prev_to = q.date_from - chrono::Duration::seconds(1);
-        let prev_from = prev_to - len;
+        // Half-open windows: previous = [from - len, from), same bucket count.
+        let prev_to = q.date_from;
+        let prev_from = q.date_from - len;
         let previous = run_period(db, project_id, q, prev_from, prev_to).await?;
         results.extend(period_results(q, previous, Some("previous"), expr.as_ref()));
     }
@@ -766,7 +807,9 @@ pub async fn run_trends_actors(
             .clone()
             .unwrap_or_else(|| BREAKDOWN_NONE.to_string());
         if value == BREAKDOWN_OTHER {
-            let (top, _) = ctx.top_breakdown_values(db).await?;
+            let (top, _) =
+                shared_breakdown(db, project_id, &a.query, a.query.date_from, a.query.date_to)
+                    .await?;
             qb.push(" AND NOT (");
             ctx.push_breakdown_raw(&mut qb);
             qb.push(" = ANY(");
