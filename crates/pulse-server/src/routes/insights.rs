@@ -6,6 +6,7 @@ use crate::error::AppResult;
 use crate::middleware::auth::AuthenticatedProject;
 use crate::services;
 use crate::services::insights::funnels::{FunnelActorsQuery, FunnelsQuery};
+use crate::services::insights::paths::{PathsActorsQuery, PathsQuery};
 use crate::services::insights::retention::{RetentionActorsQuery, RetentionQuery};
 use crate::services::insights::trends::{TrendsActorsQuery, TrendsQuery};
 use crate::state::SharedState;
@@ -205,5 +206,28 @@ pub async fn lifecycle_actors(
         b.offset,
     )
     .await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/paths
+pub async fn paths(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(query): Json<PathsQuery>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, query.reads_person_properties()).await?;
+    let result = services::insights::paths::run_paths(&state.db, auth.project_id, &query).await?;
+    Ok(Json(result))
+}
+
+// POST /api/v1/insights/paths/actors
+pub async fn paths_actors(
+    Extension(state): Extension<SharedState>,
+    auth: AuthenticatedProject,
+    Json(query): Json<PathsActorsQuery>,
+) -> AppResult<impl IntoResponse> {
+    authorize(&state, &auth, true).await?;
+    let result =
+        services::insights::paths::run_paths_actors(&state.db, auth.project_id, &query).await?;
     Ok(Json(result))
 }

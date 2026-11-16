@@ -1671,6 +1671,7 @@ dependencies = [
  "pulse-common",
  "rand 0.10.1",
  "redis",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
