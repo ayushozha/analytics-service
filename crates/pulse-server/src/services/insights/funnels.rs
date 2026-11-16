@@ -268,12 +268,44 @@ pub(crate) struct Attempt {
     pub idx: Vec<usize>,
 }
 
+/// Candidate events per step considered by unordered matching. At most
+/// `MAX_STEPS` events can be used, so more candidates per step never help.
+const UNORDERED_CANDIDATES: usize = MAX_STEPS;
+
+/// Precomputed lookups so each attempt costs O(steps · log n), not O(n).
+struct Index {
+    /// `next[s][j]`: first event index >= j matching step s (or `len`).
+    next: Vec<Vec<usize>>,
+    /// `excl_prefix[x][j]`: number of exclusion-x events in `evs[..j]`.
+    excl_prefix: Vec<Vec<u32>>,
+}
+
+impl Index {
+    fn new(evs: &[Ev], n_steps: usize, n_excl: usize) -> Self {
+        let len = evs.len();
+        let mut next = vec![vec![len; len + 1]; n_steps];
+        for (s, row) in next.iter_mut().enumerate() {
+            for j in (0..len).rev() {
+                row[j] = if evs[j].steps[s] { j } else { row[j + 1] };
+            }
+        }
+        let mut excl_prefix = vec![vec![0_u32; len + 1]; n_excl];
+        for (x, row) in excl_prefix.iter_mut().enumerate() {
+            for j in 0..len {
+                row[j + 1] = row[j] + u32::from(evs[j].excl[x]);
+            }
+        }
+        Self { next, excl_prefix }
+    }
+}
+
 /// Steps reached for one visitor, given time-ordered events. Attempts may only
 /// enter the funnel before `entry_limit` (epoch seconds; `date_to`), but may
 /// complete within one conversion window after it.
 fn best_attempt(evs: &[Ev], q: &FunnelsQuery, entry_limit: f64) -> Attempt {
     let n = q.steps.len();
     let window = q.window_secs();
+    let ix = Index::new(evs, n, q.exclusions.len());
     let mut best = Attempt {
         reached: 0,
         idx: Vec::new(),
@@ -294,46 +326,21 @@ fn best_attempt(evs: &[Ev], q: &FunnelsQuery, entry_limit: f64) -> Attempt {
                 let mut k = start;
                 while idx.len() < n {
                     let step = idx.len();
-                    let next = if strict {
-                        let j = k + 1;
-                        (j < evs.len() && evs[j].steps[step]).then_some(j)
-                    } else {
-                        (k + 1..evs.len()).find(|&j| evs[j].steps[step])
-                    };
-                    match next {
-                        Some(j) if evs[j].ts - t0 <= window => {
-                            idx.push(j);
-                            k = j;
-                        }
-                        _ => break,
-                    }
-                }
-                Attempt {
-                    reached: idx.len(),
-                    idx,
-                }
-            }
-            FunnelOrder::Unordered => {
-                // Greedily take the first event for each step within the window.
-                let mut taken: Vec<Option<usize>> = vec![None; n];
-                for (j, e) in evs.iter().enumerate().skip(start) {
-                    if e.ts - t0 > window {
+                    let j = if strict { k + 1 } else { ix.next[step][k + 1] };
+                    if j >= evs.len() || !evs[j].steps[step] || evs[j].ts - t0 > window {
                         break;
                     }
-                    if let Some(step) = (0..n).find(|&s| e.steps[s] && taken[s].is_none()) {
-                        taken[step] = Some(j);
-                    }
+                    idx.push(j);
+                    k = j;
                 }
-                // Unordered step N counts visitors who completed any N steps.
-                let mut idx: Vec<usize> = taken.into_iter().flatten().collect();
-                idx.sort_unstable();
                 Attempt {
                     reached: idx.len(),
                     idx,
                 }
             }
+            FunnelOrder::Unordered => unordered_attempt(evs, &ix, start, t0 + window, n),
         };
-        if q.order != FunnelOrder::Unordered && excluded(evs, q, &attempt) {
+        if q.order != FunnelOrder::Unordered && excluded(evs, q, &ix, &attempt) {
             continue;
         }
         if attempt.reached > best.reached {
@@ -346,9 +353,60 @@ fn best_attempt(evs: &[Ev], q: &FunnelsQuery, entry_limit: f64) -> Attempt {
     best
 }
 
+/// Maximum number of steps that can each be matched to a distinct event in
+/// `[start, window_end]` (bipartite matching, so overlapping step predicates
+/// are assigned optimally).
+fn unordered_attempt(evs: &[Ev], ix: &Index, start: usize, window_end: f64, n: usize) -> Attempt {
+    // Candidate events per step: the first few matches inside the window.
+    let candidates: Vec<Vec<usize>> = (0..n)
+        .map(|s| {
+            let mut c = Vec::new();
+            let mut j = ix.next[s][start];
+            while j < evs.len() && evs[j].ts <= window_end && c.len() < UNORDERED_CANDIDATES {
+                c.push(j);
+                j = ix.next[s][j + 1];
+            }
+            c
+        })
+        .collect();
+    let mut owner: HashMap<usize, usize> = HashMap::new();
+    fn augment(
+        s: usize,
+        candidates: &[Vec<usize>],
+        owner: &mut HashMap<usize, usize>,
+        seen: &mut Vec<usize>,
+    ) -> bool {
+        for &e in &candidates[s] {
+            if seen.contains(&e) {
+                continue;
+            }
+            seen.push(e);
+            let free = match owner.get(&e) {
+                None => true,
+                Some(&other) => augment(other, candidates, owner, seen),
+            };
+            if free {
+                owner.insert(e, s);
+                return true;
+            }
+        }
+        false
+    }
+    for s in 0..n {
+        let mut seen = Vec::new();
+        augment(s, &candidates, &mut owner, &mut seen);
+    }
+    let mut idx: Vec<usize> = owner.into_keys().collect();
+    idx.sort_unstable();
+    Attempt {
+        reached: idx.len(),
+        idx,
+    }
+}
+
 /// True if an exclusion event happened between reaching `from_step` and
 /// reaching `to_step` (or before the window closed if `to_step` was missed).
-fn excluded(evs: &[Ev], q: &FunnelsQuery, a: &Attempt) -> bool {
+fn excluded(evs: &[Ev], q: &FunnelsQuery, ix: &Index, a: &Attempt) -> bool {
     let window_end = evs[a.idx[0]].ts + q.window_secs();
     q.exclusions.iter().enumerate().any(|(xi, x)| {
         let Some(&from_idx) = a.idx.get(x.from_step) else {
@@ -359,10 +417,9 @@ fn excluded(evs: &[Ev], q: &FunnelsQuery, a: &Attempt) -> bool {
             .get(x.to_step)
             .map(|&i| evs[i].ts)
             .unwrap_or(window_end);
-        evs.iter()
-            .skip(from_idx + 1)
-            .take_while(|e| e.ts <= until)
-            .any(|e| e.excl[xi])
+        // First index after `from_idx` whose timestamp is past `until`.
+        let end = from_idx + 1 + evs[from_idx + 1..].partition_point(|e| e.ts <= until);
+        ix.excl_prefix[xi][end] > ix.excl_prefix[xi][from_idx + 1]
     })
 }
 
@@ -396,7 +453,8 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
                           event: &Option<String>,
                           props: &[PropertyFilter]|
      -> AppResult<()> {
-        qb.push("(TRUE");
+        // A filter on a missing property yields NULL; treat it as no match.
+        qb.push("COALESCE((TRUE");
         if let Some(e) = event {
             qb.push(" AND ev.event = ");
             qb.push_bind(e.clone());
@@ -405,7 +463,7 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
             qb.push(" AND ");
             push_filter(qb, f)?;
         }
-        qb.push(")");
+        qb.push("), FALSE)");
         Ok(())
     };
     for (i, s) in q.steps.iter().enumerate() {
@@ -499,14 +557,30 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
         ));
     }
 
+    // Matching is CPU-bound; keep it off the async worker threads.
+    let q = q.clone();
+    tokio::task::spawn_blocking(move || compute_outcomes(rows, &q))
+        .await
+        .map_err(|e| crate::error::AppError::Internal(format!("funnel worker failed: {e}")))
+}
+
+fn compute_outcomes(
+    rows: Vec<(String, f64, Vec<bool>, Vec<bool>, String, String)>,
+    q: &FunnelsQuery,
+) -> Vec<Outcome> {
     let entry_limit = q.date_to.timestamp() as f64;
     let mut outcomes = Vec::new();
-    let mut i = 0;
-    while i < rows.len() {
-        let visitor = rows[i].0.clone();
-        let mut evs = Vec::new();
-        while i < rows.len() && rows[i].0 == visitor {
-            let (_, ts, steps, excl, bd, bucket) = rows[i].clone();
+    let mut rows = rows.into_iter().peekable();
+    while let Some((visitor, ts, steps, excl, bd, bucket)) = rows.next() {
+        let mut evs = vec![Ev {
+            ts,
+            steps,
+            excl,
+            bd,
+            bucket,
+        }];
+        while rows.peek().is_some_and(|r| r.0 == visitor) {
+            let (_, ts, steps, excl, bd, bucket) = rows.next().expect("peeked");
             evs.push(Ev {
                 ts,
                 steps,
@@ -514,7 +588,6 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
                 bd,
                 bucket,
             });
-            i += 1;
         }
         let a = best_attempt(&evs, q, entry_limit);
         if a.reached == 0 {
@@ -528,7 +601,7 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
             entry_bucket: evs[a.idx[0]].bucket.clone(),
         });
     }
-    Ok(outcomes)
+    outcomes
 }
 
 impl FunnelsQuery {
@@ -702,21 +775,19 @@ pub async fn run_funnel(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppR
     } else {
         Vec::new()
     };
+    let render = |bd: &str, g: &[&Outcome]| {
+        let mut r = json!({ "breakdown_value": breakdown_label(bd) });
+        match q.viz {
+            FunnelViz::Steps => r["steps"] = json!(steps_result(q, g)),
+            FunnelViz::TimeToConvert => r["time_to_convert"] = time_to_convert(q, g),
+            FunnelViz::Trends => r["trend"] = conversion_trend(q, g, &days),
+        }
+        r
+    };
     let results: Vec<Value> = if groups.is_empty() && q.breakdown.is_none() {
-        vec![json!({ "breakdown_value": Value::Null, "steps": steps_result(q, &[]) })]
+        vec![render("", &[])]
     } else {
-        groups
-            .iter()
-            .map(|(bd, g)| {
-                let mut r = json!({ "breakdown_value": breakdown_label(bd) });
-                match q.viz {
-                    FunnelViz::Steps => r["steps"] = json!(steps_result(q, g)),
-                    FunnelViz::TimeToConvert => r["time_to_convert"] = time_to_convert(q, g),
-                    FunnelViz::Trends => r["trend"] = conversion_trend(q, g, &days),
-                }
-                r
-            })
-            .collect()
+        groups.iter().map(|(bd, g)| render(bd, g)).collect()
     };
     Ok(json!({ "results": results, "order": q.order, "viz": q.viz }))
 }
@@ -942,6 +1013,29 @@ mod tests {
         let mut e = evs(2, &[(0.0, Some(0)), (2.0, Some(1)), (3.0, None)]);
         e[2].excl = vec![true];
         assert_eq!(best_attempt_t(&e, &qx).reached, 2);
+    }
+
+    #[test]
+    fn unordered_overlapping_predicates_use_distinct_events() {
+        let qu = q(FunnelOrder::Unordered, 2, 14);
+        // event 0 matches both steps, event 1 matches only step 0
+        let mut e = evs(2, &[(0.0, Some(0)), (1.0, Some(0))]);
+        e[0].steps = vec![true, true];
+        assert_eq!(best_attempt_t(&e, &qu).reached, 2);
+    }
+
+    #[test]
+    fn many_starts_stay_fast() {
+        let q2 = q(FunnelOrder::Ordered, 2, 14);
+        let e = evs(
+            2,
+            &(0..100_000)
+                .map(|i| (i as f64 / 1_000.0, Some(0)))
+                .collect::<Vec<_>>(),
+        );
+        let t = std::time::Instant::now();
+        assert_eq!(best_attempt_t(&e, &q2).reached, 1);
+        assert!(t.elapsed().as_secs() < 2, "took {:?}", t.elapsed());
     }
 
     #[test]
