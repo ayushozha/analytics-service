@@ -50,8 +50,17 @@ pub async fn get(
     Path(visitor_id): Path<String>,
 ) -> AppResult<impl IntoResponse> {
     can_read(&state, &auth).await?;
+    // Cohort memberships are cohorts-module data: include them only if readable.
+    let include_cohorts = services::modules::require_module_read(
+        &state,
+        auth.project_id,
+        "cohorts",
+        &auth.allowed_modules,
+    )
+    .await
+    .is_ok();
     Ok(Json(
-        persons::get(&state.db, auth.project_id, &visitor_id).await?,
+        persons::get(&state.db, auth.project_id, &visitor_id, include_cohorts).await?,
     ))
 }
 

@@ -180,7 +180,13 @@ async fn require_person(db: &PgPool, project_id: Uuid, visitor_id: &str) -> AppR
     }
 }
 
-pub async fn get(db: &PgPool, project_id: Uuid, visitor_id: &str) -> AppResult<Value> {
+/// `include_cohorts` is false when the caller may not read the cohorts module.
+pub async fn get(
+    db: &PgPool,
+    project_id: Uuid,
+    visitor_id: &str,
+    include_cohorts: bool,
+) -> AppResult<Value> {
     require_person(db, project_id, visitor_id).await?;
     let profile: Option<(
         Option<String>,
@@ -213,14 +219,18 @@ pub async fn get(db: &PgPool, project_id: Uuid, visitor_id: &str) -> AppResult<V
     .bind(visitor_id)
     .fetch_one(db)
     .await?;
-    let cohorts: Vec<(Uuid, String, bool)> = sqlx::query_as(
-        "SELECT c.id, c.name, c.is_static FROM cohort_people cp JOIN person_cohorts c ON c.id = cp.cohort_id \
-         WHERE c.project_id = $1 AND cp.visitor_id = $2 AND NOT c.deleted ORDER BY c.name",
-    )
-    .bind(project_id)
-    .bind(visitor_id)
-    .fetch_all(db)
-    .await?;
+    let cohorts: Vec<(Uuid, String, bool)> = if include_cohorts {
+        sqlx::query_as(
+            "SELECT c.id, c.name, c.is_static FROM cohort_people cp JOIN person_cohorts c ON c.id = cp.cohort_id \
+             WHERE c.project_id = $1 AND cp.visitor_id = $2 AND NOT c.deleted ORDER BY c.name",
+        )
+        .bind(project_id)
+        .bind(visitor_id)
+        .fetch_all(db)
+        .await?
+    } else {
+        Vec::new()
+    };
     let merged_from: Vec<(String,)> = sqlx::query_as(
         "SELECT from_visitor_id FROM person_redirects WHERE project_id = $1 AND to_visitor_id = $2 ORDER BY 1",
     )
@@ -238,7 +248,8 @@ pub async fn get(db: &PgPool, project_id: Uuid, visitor_id: &str) -> AppResult<V
         "aliases": aliases.into_iter().map(|a| a.0).collect::<Vec<_>>(),
         "merged_from": merged_from.into_iter().map(|a| a.0).collect::<Vec<_>>(),
         "stats": { "pageviews": stats.0, "events": stats.1, "sessions": stats.2 },
-        "cohorts": cohorts.into_iter().map(|(id, name, s)| json!({"id": id, "name": name, "is_static": s})).collect::<Vec<_>>(),
+        // Omitted (null) when the caller may not read cohorts.
+        "cohorts": include_cohorts.then(|| cohorts.into_iter().map(|(id, name, s)| json!({"id": id, "name": name, "is_static": s})).collect::<Vec<_>>()),
     }))
 }
 
@@ -417,17 +428,24 @@ pub async fn merge(
     .bind(merged.2)
     .execute(&mut *tx)
     .await?;
-    // Rows whose uniqueness includes visitor_id: keep the target's on conflict.
-    sqlx::query(
-        "DELETE FROM experiment_exposures o USING experiment_exposures t \
-         WHERE o.project_id = $1 AND o.visitor_id = ANY($2) AND t.visitor_id = $3 AND t.experiment_id = o.experiment_id",
-    )
-    .bind(project_id).bind(others).bind(target).execute(&mut *tx).await?;
-    sqlx::query(
-        "DELETE FROM account_memberships o USING account_memberships t \
-         WHERE o.project_id = $1 AND o.visitor_id = ANY($2) AND t.project_id = $1 AND t.visitor_id = $3 AND t.account_id = o.account_id",
-    )
-    .bind(project_id).bind(others).bind(target).execute(&mut *tx).await?;
+    // Rows unique per (key, visitor_id) would collide once rewritten to the
+    // target: keep the target's row, else the first-listed source's.
+    for (table, key) in [
+        ("experiment_exposures", "experiment_id"),
+        ("account_memberships", "account_id"),
+    ] {
+        sqlx::query(&format!(
+            "DELETE FROM {table} o WHERE o.project_id = $1 AND o.visitor_id = ANY($2) AND EXISTS ( \
+               SELECT 1 FROM {table} k WHERE k.project_id = $1 AND k.{key} = o.{key} AND ( \
+                 k.visitor_id = $3 OR (k.visitor_id = ANY($2) \
+                   AND array_position($2, k.visitor_id) < array_position($2, o.visitor_id))))"
+        ))
+        .bind(project_id)
+        .bind(others)
+        .bind(target)
+        .execute(&mut *tx)
+        .await?;
+    }
     sqlx::query(
         "INSERT INTO user_aliases (project_id, user_id, visitor_id) \
          SELECT project_id, user_id, $3 FROM user_aliases WHERE project_id = $1 AND visitor_id = ANY($2) \
@@ -450,21 +468,18 @@ pub async fn merge(
     .await?;
     let mut moved = serde_json::Map::new();
     for table in VISITOR_TABLES {
-        let sql = match *table {
-            "user_aliases" | "user_profiles" => {
-                format!("DELETE FROM {table} WHERE project_id = $1 AND visitor_id = ANY($2)")
-            }
-            _ => format!(
+        // Aliases and profiles were copied onto the target above; the rest move.
+        let delete = matches!(*table, "user_aliases" | "user_profiles");
+        let sql = if delete {
+            format!("DELETE FROM {table} WHERE project_id = $1 AND visitor_id = ANY($2)")
+        } else {
+            format!(
                 "UPDATE {table} SET visitor_id = $3 WHERE project_id = $1 AND visitor_id = ANY($2)"
-            ),
+            )
         };
-        let n = sqlx::query(&sql)
-            .bind(project_id)
-            .bind(others)
-            .bind(target)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
+        let q = sqlx::query(&sql).bind(project_id).bind(others);
+        let q = if delete { q } else { q.bind(target) };
+        let n = q.execute(&mut *tx).await?.rows_affected();
         moved.insert(table.to_string(), json!(n));
     }
     // Redirect the merged ids (and anything already redirected to them).
