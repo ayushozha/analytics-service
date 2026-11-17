@@ -5,10 +5,11 @@
 //! | column       | pageviews                       | events                          |
 //! |--------------|---------------------------------|---------------------------------|
 //! | `event`      | `'$pageview'`                   | `event_name`                    |
-//! | `properties` | path/title/referrer/utm_* JSON  | `event_data` + path/revenue     |
+//! | `properties` | `properties` + path/title/utm_* | `event_data` + path/revenue     |
 //!
 //! Session properties come from `sessions` (joined on `session_id`) and person
-//! properties from `user_profiles.traits` (joined on `visitor_id`). All user
+//! properties from `user_profiles.traits` (joined on `visitor_id`). Group
+//! properties come from `groups` (joined as `g<i>` on the `$group_<i>` key). All user
 //! input is bound as parameters; only whitelisted identifiers are interpolated.
 
 pub mod filters;
@@ -56,6 +57,8 @@ pub enum PropertyType {
     Person,
     /// Membership of a person cohort (`key` = cohort id). Filters only.
     Cohort,
+    /// A property of the event's group of type `group_type_index`.
+    Group,
 }
 
 /// Session columns that can be filtered or broken down on.
@@ -129,7 +132,7 @@ pub(crate) fn push_event_source(qb: &mut QueryBuilder<'_, Postgres>, src: &Event
     if want_pageviews {
         qb.push(
             "SELECT '$pageview'::text AS event, p.project_id, p.visitor_id, p.session_id, p.created_at, \
-             jsonb_strip_nulls(jsonb_build_object('path', p.path, 'title', p.title, \
+             COALESCE(p.properties, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object('path', p.path, 'title', p.title, \
              'referrer', p.referrer, 'referrer_domain', p.referrer_domain, \
              'utm_source', p.utm_source, 'utm_medium', p.utm_medium, \
              'utm_campaign', p.utm_campaign, 'utm_content', p.utm_content, \
@@ -172,6 +175,14 @@ pub(crate) fn push_event_source(qb: &mut QueryBuilder<'_, Postgres>, src: &Event
         qb.push(" LEFT JOIN user_profiles up ON up.project_id = ");
         qb.push_bind(src.project_id);
         qb.push(" AND up.visitor_id = ev.visitor_id");
+    }
+    for i in 0..crate::services::groups::MAX_GROUP_TYPES {
+        if src.joins.groups & (1 << i) != 0 {
+            qb.push(format!(
+                " LEFT JOIN groups g{i} ON g{i}.project_id = ev.project_id \
+                 AND g{i}.group_type_index = {i} AND g{i}.group_key = ev.properties ->> '$group_{i}'"
+            ));
+        }
     }
 }
 

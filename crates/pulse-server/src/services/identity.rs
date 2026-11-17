@@ -179,6 +179,9 @@ fn empty_array() -> serde_json::Value {
     serde_json::json!([])
 }
 
+/// Group type that `identify(account_id = …)` accounts are mirrored into.
+pub const ACCOUNT_GROUP_TYPE: &str = "account";
+
 /// Person property changes (PostHog `$set` / `$set_once` / `$unset`).
 #[derive(Debug, Clone, Default)]
 pub struct PersonUpdate {
@@ -323,6 +326,20 @@ pub async fn identify_user(
             identified_at,
         )
         .await?;
+        // Mirror the account into the `account` group type for group analytics.
+        if let Some(index) =
+            crate::services::groups::type_index(db, project_id, ACCOUNT_GROUP_TYPE, true).await?
+        {
+            let mut set = account_traits.clone();
+            if let (Some(name), Some(obj)) = (account_name, set.as_object_mut()) {
+                obj.insert("name".into(), serde_json::json!(name));
+            }
+            let update = PersonUpdate {
+                set,
+                ..Default::default()
+            };
+            crate::services::groups::upsert(db, project_id, index, account_id, &update).await?;
+        }
     }
 
     Ok(profile)

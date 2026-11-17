@@ -392,6 +392,7 @@ fn push_criterion(
                     property_type: PropertyType::Person,
                     operator: *operator,
                     value: value.clone(),
+                    group_type_index: None,
                 },
             )?;
         }

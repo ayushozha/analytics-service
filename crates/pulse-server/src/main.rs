@@ -264,6 +264,36 @@ async fn main() -> anyhow::Result<()> {
             "/api/v2/persons/{visitor_id}/merge",
             axum::routing::post(routes::persons::merge),
         )
+        // Groups
+        .route(
+            "/api/v2/groups",
+            axum::routing::post(routes::groups::identify),
+        )
+        .route("/api/v2/groups/types", get(routes::groups::list_types))
+        .route(
+            "/api/v2/groups/types/{index}",
+            axum::routing::patch(routes::groups::rename_type),
+        )
+        .route(
+            "/api/v2/groups/{index}/query",
+            axum::routing::post(routes::groups::query),
+        )
+        .route(
+            "/api/v2/groups/{index}/{key}",
+            get(routes::groups::get).delete(routes::groups::delete),
+        )
+        .route(
+            "/api/v2/groups/{index}/{key}/events",
+            get(routes::groups::events),
+        )
+        .route(
+            "/api/v2/groups/{index}/{key}/persons",
+            get(routes::groups::persons),
+        )
+        .route(
+            "/api/v2/groups/{index}/{key}/properties",
+            axum::routing::patch(routes::groups::update_properties),
+        )
         // Person cohorts (v1 /api/v1/cohorts remains the acquisition cohort matrix)
         .route(
             "/api/v2/cohorts",

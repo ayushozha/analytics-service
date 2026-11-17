@@ -16,8 +16,8 @@ use crate::models::buffered::{
 use crate::models::event::BufferedEvent;
 use crate::models::pageview::BufferedPageview;
 use crate::services::{
-    alerts, destinations, error_tracking, geo, goals, governance, identity, ingestion, modules,
-    privacy, session, session_replay, surveys, ua,
+    alerts, destinations, error_tracking, geo, goals, governance, groups, identity, ingestion,
+    modules, privacy, session, session_replay, surveys, ua,
 };
 use crate::state::SharedState;
 use pulse_common::types::{CollectEnvelope, CollectRequest};
@@ -259,6 +259,13 @@ async fn process_collect_envelope(
                 utm_campaign: payload.utm_campaign,
                 utm_content: payload.utm_content,
                 utm_term: payload.utm_term,
+                properties: groups::stamp_event_data(
+                    &state.db,
+                    auth.project_id,
+                    envelope.groups.as_ref(),
+                    payload.properties.filter(|p| p.is_object()),
+                )
+                .await?,
                 created_at: now,
             };
 
@@ -324,12 +331,24 @@ async fn process_collect_envelope(
                 .await?;
             }
 
+            if payload.name == groups::GROUP_IDENTIFY_EVENT {
+                groups::identify_from_event(&state.db, auth.project_id, payload.data.as_ref())
+                    .await?;
+            }
+            let event_data = groups::stamp_event_data(
+                &state.db,
+                auth.project_id,
+                envelope.groups.as_ref(),
+                payload.data,
+            )
+            .await?;
+
             let event = BufferedEvent {
                 project_id: auth.project_id,
                 session_id,
                 visitor_id: envelope.visitor_id,
                 event_name: payload.name,
-                event_data: payload.data,
+                event_data,
                 path: payload.path,
                 revenue_amount: payload.revenue_amount,
                 revenue_currency: payload.revenue_currency,

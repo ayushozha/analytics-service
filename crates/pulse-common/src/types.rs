@@ -61,6 +61,9 @@ pub struct CollectEnvelope {
     pub consent_mode: Option<String>,
     #[serde(default)]
     pub consent_granted: Option<bool>,
+    /// Groups this request belongs to, `{group_type: group_key}` (e.g. `{"company": "acme"}`).
+    #[serde(default)]
+    pub groups: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +87,9 @@ pub struct PageviewPayload {
     pub utm_content: Option<String>,
     #[serde(default)]
     pub utm_term: Option<String>,
+    /// Custom pageview properties (an object).
+    #[serde(default)]
+    pub properties: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

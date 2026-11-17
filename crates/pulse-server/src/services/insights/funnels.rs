@@ -190,7 +190,7 @@ impl FunnelsQuery {
             j.add_filters(&x.properties);
         }
         if let Some(b) = &self.breakdown {
-            j.add(b.property_type);
+            j.add(b.property_type, b.group_type_index);
         }
         j
     }
@@ -235,7 +235,7 @@ pub fn validate(q: &FunnelsQuery) -> AppResult<()> {
         ));
     }
     if let Some(b) = &q.breakdown {
-        validate_property(&b.property, b.property_type)?;
+        validate_property(&b.property, b.property_type, b.group_type_index)?;
         let limit = b.limit.unwrap_or(DEFAULT_BREAKDOWN_LIMIT);
         if !(1..=MAX_BREAKDOWN_LIMIT).contains(&limit) {
             return Err(bad_request(format!(
@@ -483,7 +483,7 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
     match &q.breakdown {
         Some(b) => {
             qb.push("COALESCE(");
-            push_property_expr(&mut qb, &b.property, b.property_type);
+            push_property_expr(&mut qb, &b.property, b.property_type, b.group_type_index);
             qb.push(format!(", '{NONE_LABEL}')"));
         }
         None => {

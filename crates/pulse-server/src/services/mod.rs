@@ -17,6 +17,7 @@ pub mod funnels;
 pub mod geo;
 pub mod goals;
 pub mod governance;
+pub mod groups;
 pub mod heatmaps;
 pub mod identity;
 pub mod ingestion;
