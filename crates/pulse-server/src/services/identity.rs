@@ -179,27 +179,63 @@ fn empty_array() -> serde_json::Value {
     serde_json::json!([])
 }
 
-/// Persist an identify call and merge traits into the visitor's profile.
-pub async fn identify_user(
+/// Person property changes (PostHog `$set` / `$set_once` / `$unset`).
+#[derive(Debug, Clone, Default)]
+pub struct PersonUpdate {
+    /// Overwrite these keys.
+    pub set: serde_json::Value,
+    /// Set these keys only if the person does not have them yet.
+    pub set_once: serde_json::Value,
+    /// Remove these keys.
+    pub unset: Vec<String>,
+}
+
+impl PersonUpdate {
+    /// Extract `$set`, `$set_once` and `$unset` from an event's properties.
+    pub fn from_event_data(data: Option<&serde_json::Value>) -> Option<Self> {
+        let obj = data?.as_object()?;
+        let pick = |k: &str| obj.get(k).filter(|v| v.is_object()).cloned();
+        let set = pick("$set");
+        let set_once = pick("$set_once");
+        let unset: Vec<String> = obj
+            .get("$unset")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if set.is_none() && set_once.is_none() && unset.is_empty() {
+            return None;
+        }
+        Some(Self {
+            set: set.unwrap_or_else(empty_object),
+            set_once: set_once.unwrap_or_else(empty_object),
+            unset,
+        })
+    }
+}
+
+/// Create or update a person: `traits = ((set_once || traits) || set) - unset`.
+pub async fn apply_person_update(
     db: &PgPool,
     project_id: Uuid,
     visitor_id: &str,
     user_id: Option<&str>,
-    traits: &serde_json::Value,
-    account_id: Option<&str>,
-    account_name: Option<&str>,
-    account_traits: Option<&serde_json::Value>,
-    account_role: Option<&str>,
-    identified_at: DateTime<Utc>,
+    update: &PersonUpdate,
+    seen_at: DateTime<Utc>,
+    identified: bool,
 ) -> AppResult<UserProfile> {
-    let user_id = normalize_optional(user_id);
-    let profile: UserProfile = sqlx::query_as(&format!(
+    let set = normalized_json_object(Some(&update.set), "traits")?;
+    let set_once = normalized_json_object(Some(&update.set_once), "set_once")?;
+    Ok(sqlx::query_as(&format!(
         "INSERT INTO user_profiles \
          (project_id, visitor_id, user_id, traits, first_seen_at, last_seen_at, identified_at) \
-         VALUES ($1, $2, $3, $4, $5, $5, $5) \
+         VALUES ($1, $2, $3, ($6::jsonb || $4::jsonb) - $7::text[], $5, $5, CASE WHEN $8 THEN $5 END) \
          ON CONFLICT (project_id, visitor_id) DO UPDATE SET \
              user_id = COALESCE(EXCLUDED.user_id, user_profiles.user_id), \
-             traits = user_profiles.traits || EXCLUDED.traits, \
+             traits = (($6::jsonb || user_profiles.traits) || $4::jsonb) - $7::text[], \
              first_seen_at = LEAST(user_profiles.first_seen_at, EXCLUDED.first_seen_at), \
              last_seen_at = GREATEST(user_profiles.last_seen_at, EXCLUDED.last_seen_at), \
              identified_at = COALESCE(user_profiles.identified_at, EXCLUDED.identified_at), \
@@ -208,10 +244,46 @@ pub async fn identify_user(
     ))
     .bind(project_id)
     .bind(visitor_id)
-    .bind(user_id)
-    .bind(traits)
-    .bind(identified_at)
+    .bind(normalize_optional(user_id))
+    .bind(&set)
+    .bind(seen_at)
+    .bind(&set_once)
+    .bind(&update.unset)
+    .bind(identified)
     .fetch_one(db)
+    .await?)
+}
+
+/// Persist an identify call and merge traits into the visitor's profile.
+#[allow(clippy::too_many_arguments)]
+pub async fn identify_user(
+    db: &PgPool,
+    project_id: Uuid,
+    visitor_id: &str,
+    user_id: Option<&str>,
+    traits: &serde_json::Value,
+    set_once: Option<&serde_json::Value>,
+    unset: &[String],
+    account_id: Option<&str>,
+    account_name: Option<&str>,
+    account_traits: Option<&serde_json::Value>,
+    account_role: Option<&str>,
+    identified_at: DateTime<Utc>,
+) -> AppResult<UserProfile> {
+    let user_id = normalize_optional(user_id);
+    let profile = apply_person_update(
+        db,
+        project_id,
+        visitor_id,
+        user_id,
+        &PersonUpdate {
+            set: traits.clone(),
+            set_once: set_once.cloned().unwrap_or_else(empty_object),
+            unset: unset.to_vec(),
+        },
+        identified_at,
+        true,
+    )
     .await?;
 
     if let Some(user_id) = user_id {
@@ -956,6 +1028,8 @@ async fn sync_scim_user_to_identity(db: &PgPool, user: &ScimUser) -> AppResult<U
         Some(&user.user_name),
         &traits,
         None,
+        &[],
+        None,
         None,
         None,
         None,
@@ -1318,5 +1392,30 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.id == "visitor:v_123" && node.metadata["last_seen_at"] == "now"));
+    }
+}
+
+#[cfg(test)]
+mod person_update_tests {
+    use super::PersonUpdate;
+    use serde_json::json;
+
+    #[test]
+    fn extracts_set_set_once_unset() {
+        let u = PersonUpdate::from_event_data(Some(&json!({
+            "$set": {"plan": "pro"}, "$set_once": {"source": "ads"}, "$unset": ["email", 3], "other": 1
+        })))
+        .unwrap();
+        assert_eq!(u.set, json!({"plan": "pro"}));
+        assert_eq!(u.set_once, json!({"source": "ads"}));
+        assert_eq!(u.unset, vec!["email".to_string()]);
+    }
+
+    #[test]
+    fn ignores_events_without_person_updates() {
+        assert!(PersonUpdate::from_event_data(None).is_none());
+        assert!(PersonUpdate::from_event_data(Some(&json!({"plan": "pro"}))).is_none());
+        assert!(PersonUpdate::from_event_data(Some(&json!({"$set": "not-an-object"}))).is_none());
+        assert!(PersonUpdate::from_event_data(Some(&json!([1, 2]))).is_none());
     }
 }

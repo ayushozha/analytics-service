@@ -114,6 +114,11 @@ async fn main() -> anyhow::Result<()> {
     // Scheduled alert evaluation (fires drop/outage alerts without traffic)
     services::alerts::start_alert_evaluator_task(state.clone());
 
+    // Person merges: make sure ingest can follow redirects even after a Redis flush
+    if let Err(e) = services::persons::warm_redirects(&state).await {
+        tracing::warn!("Failed to warm person redirects: {e}");
+    }
+
     // Recalculate stale dynamic person cohorts
     services::person_cohorts::start_recalc_task(state.clone());
     info!("Email report scheduler started");
@@ -233,6 +238,31 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/saved-insights/{id}/versions/{version}/restore",
             axum::routing::post(routes::saved_insights::restore),
+        )
+        // Persons
+        .route(
+            "/api/v2/persons/query",
+            axum::routing::post(routes::persons::query),
+        )
+        .route(
+            "/api/v2/persons/{visitor_id}",
+            get(routes::persons::get).delete(routes::persons::delete),
+        )
+        .route(
+            "/api/v2/persons/{visitor_id}/events",
+            get(routes::persons::events),
+        )
+        .route(
+            "/api/v2/persons/{visitor_id}/sessions",
+            get(routes::persons::sessions),
+        )
+        .route(
+            "/api/v2/persons/{visitor_id}/properties",
+            axum::routing::patch(routes::persons::update_properties),
+        )
+        .route(
+            "/api/v2/persons/{visitor_id}/merge",
+            axum::routing::post(routes::persons::merge),
         )
         // Person cohorts (v1 /api/v1/cohorts remains the acquisition cohort matrix)
         .route(

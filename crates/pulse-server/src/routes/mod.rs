@@ -8,6 +8,7 @@ pub mod features_ext;
 pub mod health;
 pub mod ingest;
 pub mod insights;
+pub mod persons;
 pub mod query;
 pub mod saved_insights;
 pub mod script;
