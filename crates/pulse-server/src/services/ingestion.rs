@@ -541,7 +541,7 @@ async fn batch_insert_pageviews(
 ) -> Result<(), anyhow::Error> {
     // Build a bulk insert
     let mut query = String::from(
-        "INSERT INTO pageviews (project_id, session_id, visitor_id, path, title, referrer, referrer_domain, query_params, duration_ms, utm_source, utm_medium, utm_campaign, utm_content, utm_term, created_at) VALUES "
+        "INSERT INTO pageviews (project_id, session_id, visitor_id, path, title, referrer, referrer_domain, query_params, duration_ms, utm_source, utm_medium, utm_campaign, utm_content, utm_term, properties, created_at) VALUES "
     );
 
     let mut params_idx = 1u32;
@@ -550,7 +550,7 @@ async fn batch_insert_pageviews(
             query.push_str(", ");
         }
         query.push_str(&format!(
-            "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+            "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
             params_idx,
             params_idx + 1,
             params_idx + 2,
@@ -566,8 +566,9 @@ async fn batch_insert_pageviews(
             params_idx + 12,
             params_idx + 13,
             params_idx + 14,
+            params_idx + 15,
         ));
-        params_idx += 15;
+        params_idx += 16;
     }
 
     let mut q = sqlx::query(&query);
@@ -587,6 +588,7 @@ async fn batch_insert_pageviews(
             .bind(&pv.utm_campaign)
             .bind(&pv.utm_content)
             .bind(&pv.utm_term)
+            .bind(&pv.properties)
             .bind(pv.created_at);
     }
 

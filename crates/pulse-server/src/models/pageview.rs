@@ -18,5 +18,8 @@ pub struct BufferedPageview {
     pub utm_campaign: Option<String>,
     pub utm_content: Option<String>,
     pub utm_term: Option<String>,
+    /// Custom properties and `$group_<i>` keys.
+    #[serde(default)]
+    pub properties: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
 }

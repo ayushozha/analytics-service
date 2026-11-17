@@ -86,6 +86,7 @@ impl RetentionQuery {
             math: Math::Total,
             math_property: None,
             math_property_type: Default::default(),
+            math_group_type_index: None,
             properties: e.properties.clone(),
         };
         TrendsQuery {

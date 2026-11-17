@@ -8,6 +8,7 @@ use sqlx::{Postgres, QueryBuilder};
 
 use super::{bad_request, PropertyType, SESSION_PROPERTIES};
 use crate::error::AppResult;
+use crate::services::groups::MAX_GROUP_TYPES;
 
 /// Maximum nesting depth of filter groups.
 const MAX_GROUP_DEPTH: usize = 5;
@@ -41,6 +42,9 @@ pub struct PropertyFilter {
     /// String, number, bool, or an array of them (for `exact` / `is_not`).
     #[serde(default)]
     pub value: serde_json::Value,
+    /// Group type for `type: "group"` filters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_type_index: Option<i16>,
 }
 
 fn default_operator() -> Operator {
@@ -77,6 +81,8 @@ pub struct Joins {
     pub person: bool,
     /// A cohort filter is used (needs the `cohorts` module).
     pub cohort: bool,
+    /// Bit `i` set: group type `i` is joined as `g<i>`.
+    pub groups: u8,
 }
 
 /// Which protected data a query reads, for module authorization.
@@ -91,16 +97,22 @@ pub struct DataNeeds {
 impl From<Joins> for DataNeeds {
     fn from(j: Joins) -> Self {
         Self {
-            person: j.person,
+            // Group properties are governed like person properties.
+            person: j.person || j.groups != 0,
             cohorts: j.cohort,
         }
     }
 }
 
 impl Joins {
-    pub fn add(&mut self, t: PropertyType) {
+    pub fn add(&mut self, t: PropertyType, group: Option<i16>) {
         match t {
             PropertyType::Event => {}
+            PropertyType::Group => {
+                if let Some(i) = group.filter(|i| (0..MAX_GROUP_TYPES).contains(i)) {
+                    self.groups |= 1 << i;
+                }
+            }
             PropertyType::Cohort => self.cohort = true,
             PropertyType::Session => self.session = true,
             PropertyType::Person => self.person = true,
@@ -109,14 +121,14 @@ impl Joins {
 
     pub fn add_filters(&mut self, filters: &[PropertyFilter]) {
         for f in filters {
-            self.add(f.property_type);
+            self.add(f.property_type, f.group_type_index);
         }
     }
 
     pub fn add_group(&mut self, group: &FilterGroup) {
         for node in &group.values {
             match node {
-                FilterNode::Property(f) => self.add(f.property_type),
+                FilterNode::Property(f) => self.add(f.property_type, f.group_type_index),
                 FilterNode::Group(g) => self.add_group(g),
             }
         }
@@ -124,7 +136,7 @@ impl Joins {
 }
 
 /// Validate a property reference before any SQL is built.
-pub fn validate_property(key: &str, t: PropertyType) -> AppResult<()> {
+pub fn validate_property(key: &str, t: PropertyType, group: Option<i16>) -> AppResult<()> {
     if t == PropertyType::Cohort {
         return Err(bad_request(
             "cohorts can only be used as filters (type \"cohort\", operator exact or is_not)",
@@ -132,6 +144,12 @@ pub fn validate_property(key: &str, t: PropertyType) -> AppResult<()> {
     }
     if key.is_empty() || key.len() > 200 {
         return Err(bad_request("property key must be 1-200 characters"));
+    }
+    if t == PropertyType::Group && !group.is_some_and(|i| (0..MAX_GROUP_TYPES).contains(&i)) {
+        return Err(bad_request(format!(
+            "group properties need group_type_index 0-{}",
+            MAX_GROUP_TYPES - 1
+        )));
     }
     if t == PropertyType::Session && !SESSION_PROPERTIES.contains(&key) {
         return Err(bad_request(format!(
@@ -143,8 +161,21 @@ pub fn validate_property(key: &str, t: PropertyType) -> AppResult<()> {
 }
 
 /// Push the text-valued SQL expression for a property.
-pub fn push_property_expr(qb: &mut QueryBuilder<'_, Postgres>, key: &str, t: PropertyType) {
+pub fn push_property_expr(
+    qb: &mut QueryBuilder<'_, Postgres>,
+    key: &str,
+    t: PropertyType,
+    group: Option<i16>,
+) {
     match t {
+        PropertyType::Group => {
+            // The index is checked by validate_property; `g<i>` is joined by push_event_source.
+            let i = group.unwrap_or_default();
+            debug_assert!((0..MAX_GROUP_TYPES).contains(&i));
+            qb.push(format!("(g{i}.properties ->> "));
+            qb.push_bind(key.to_string());
+            qb.push(")");
+        }
         PropertyType::Event => {
             qb.push("(ev.properties ->> ");
             qb.push_bind(key.to_string());
@@ -169,11 +200,16 @@ pub fn push_property_expr(qb: &mut QueryBuilder<'_, Postgres>, key: &str, t: Pro
 }
 
 /// Push a numeric expression for a property; non-numeric values become NULL.
-pub fn push_numeric_expr(qb: &mut QueryBuilder<'_, Postgres>, key: &str, t: PropertyType) {
+pub fn push_numeric_expr(
+    qb: &mut QueryBuilder<'_, Postgres>,
+    key: &str,
+    t: PropertyType,
+    group: Option<i16>,
+) {
     qb.push("(CASE WHEN ");
-    push_property_expr(qb, key, t);
+    push_property_expr(qb, key, t, group);
     qb.push(" ~ '^\\s*-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?\\s*$' THEN (");
-    push_property_expr(qb, key, t);
+    push_property_expr(qb, key, t, group);
     qb.push(")::double precision END)");
 }
 
@@ -266,9 +302,10 @@ pub fn push_filter(qb: &mut QueryBuilder<'_, Postgres>, f: &PropertyFilter) -> A
     if f.property_type == PropertyType::Cohort {
         return push_cohort_filter(qb, f);
     }
-    validate_property(&f.key, f.property_type)?;
+    validate_property(&f.key, f.property_type, f.group_type_index)?;
+    let g = f.group_type_index;
     let expr =
-        |qb: &mut QueryBuilder<'_, Postgres>| push_property_expr(qb, &f.key, f.property_type);
+        |qb: &mut QueryBuilder<'_, Postgres>| push_property_expr(qb, &f.key, f.property_type, g);
     match f.operator {
         Operator::Exact => {
             expr(qb);
@@ -332,7 +369,7 @@ pub fn push_filter(qb: &mut QueryBuilder<'_, Postgres>, f: &PropertyFilter) -> A
                 Operator::Lt => " < ",
                 _ => " <= ",
             };
-            push_numeric_expr(qb, &f.key, f.property_type);
+            push_numeric_expr(qb, &f.key, f.property_type, f.group_type_index);
             qb.push(op);
             qb.push_bind(value_as_f64(&f.value)?);
         }
@@ -512,7 +549,7 @@ mod tests {
         assert!(sql.contains("NOT EXISTS"));
         let mut qb = QueryBuilder::<Postgres>::new("");
         assert!(push_filter(&mut qb, &filter(json!({"key": "nope", "type": "cohort"}))).is_err());
-        assert!(validate_property("x", PropertyType::Cohort).is_err());
+        assert!(validate_property("x", PropertyType::Cohort, None).is_err());
     }
 
     #[test]
@@ -524,5 +561,25 @@ mod tests {
         let mut j = Joins::default();
         j.add_group(&group);
         assert!(j.person && !j.session);
+    }
+
+    #[test]
+    fn group_filters_join_by_index() {
+        let f = filter(
+            json!({"key": "industry", "type": "group", "group_type_index": 1, "value": "saas"}),
+        );
+        let sql = sql_for(f.clone());
+        assert!(sql.contains("(g1.properties ->> $1) = ANY($2)"));
+        let mut j = Joins::default();
+        j.add_filters(&[f]);
+        assert_eq!(j.groups, 0b10);
+        assert!(DataNeeds::from(j).person);
+        let mut qb = QueryBuilder::<Postgres>::new("");
+        for bad in [
+            json!({"key": "x", "type": "group", "value": "y"}),
+            json!({"key": "x", "type": "group", "group_type_index": 5, "value": "y"}),
+        ] {
+            assert!(push_filter(&mut qb, &filter(bad)).is_err());
+        }
     }
 }

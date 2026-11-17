@@ -391,6 +391,8 @@ const DEFAULT_API_URL = "https://pulse.ayushojha.com";
 type CollectPrivacy = {
   consentMode?: string;
   consentGranted?: boolean;
+  /** Groups the request belongs to, `{groupType: groupKey}`. */
+  groups?: Record<string, string>;
 };
 
 export class PulseServerClient {
@@ -444,6 +446,7 @@ export class PulseServerClient {
         visitor_id: visitorId,
         consent_mode: privacy?.consentMode ?? this.consentMode,
         consent_granted: privacy?.consentGranted ?? this.consentGranted,
+        groups: privacy?.groups,
       }),
     });
   }
@@ -485,6 +488,8 @@ export class PulseServerClient {
     utmCampaign?: string;
     utmContent?: string;
     utmTerm?: string;
+    properties?: Record<string, unknown>;
+    groups?: Record<string, string>;
     ip?: string;
     userAgent?: string;
     consentMode?: string;
@@ -502,9 +507,11 @@ export class PulseServerClient {
       utm_campaign: params.utmCampaign,
       utm_content: params.utmContent,
       utm_term: params.utmTerm,
+      properties: params.properties,
     }, params.visitorId, headers, {
       consentMode: params.consentMode,
       consentGranted: params.consentGranted,
+      groups: params.groups,
     });
   }
 
@@ -515,6 +522,7 @@ export class PulseServerClient {
     path?: string;
     revenueAmount?: number;
     revenueCurrency?: string;
+    groups?: Record<string, string>;
     ip?: string;
     userAgent?: string;
     consentMode?: string;
@@ -532,6 +540,19 @@ export class PulseServerClient {
     }, params.visitorId, headers, {
       consentMode: params.consentMode,
       consentGranted: params.consentGranted,
+      groups: params.groups,
+    });
+  }
+
+  /** Create or update a group's properties (server-side `$groupidentify`). */
+  async groupIdentify(params: { groupType: string; groupKey: string; properties?: Record<string, unknown> }) {
+    return this.request("/api/v2/groups", {
+      method: "POST",
+      body: JSON.stringify({
+        group_type: params.groupType,
+        group_key: params.groupKey,
+        properties: params.properties || {},
+      }),
     });
   }
 

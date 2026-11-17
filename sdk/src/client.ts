@@ -425,6 +425,8 @@ export class PulseClient {
   private replayStartedAt = 0;
   private replayEvents: Record<string, unknown>[] = [];
   private replayFlushTimer?: ReturnType<typeof setInterval>;
+  /** Groups attached to every event and pageview, `{groupType: groupKey}`. */
+  private groups: Record<string, string> = {};
 
   constructor(config: PulseConfig) {
     this.config = {
@@ -483,6 +485,7 @@ export class PulseClient {
       visitor_id: this.visitorId,
       consent_mode: this.config.consentMode,
       consent_granted: this.config.consentGranted,
+      ...(Object.keys(this.groups).length > 0 ? { groups: { ...this.groups } } : {}),
     };
 
     if (this.config.batch) {
@@ -897,6 +900,25 @@ export class PulseClient {
       });
     }
     this.send("identify", payload);
+  }
+
+  /**
+   * Associate this visitor's subsequent events with a group (e.g. a company),
+   * as in PostHog. Properties, if given, are set on the group via `$groupidentify`.
+   */
+  group(groupType: string, groupKey: string, properties?: Record<string, unknown>) {
+    this.groups = { ...this.groups, [groupType]: String(groupKey) };
+    if (properties) {
+      this.send("event", {
+        name: "$groupidentify",
+        data: { $group_type: groupType, $group_key: String(groupKey), $group_set: properties },
+      });
+    }
+  }
+
+  /** Stop attaching groups to events (e.g. on logout). */
+  resetGroups() {
+    this.groups = {};
   }
 
   searchQuery(query: string, resultsCount?: number) {

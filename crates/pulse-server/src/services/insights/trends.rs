@@ -19,6 +19,7 @@ use super::{
     BREAKDOWN_OTHER, DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT, MAX_BUCKETS, MAX_SERIES,
 };
 use crate::error::AppResult;
+use crate::services::groups::MAX_GROUP_TYPES;
 
 /// Label used for events whose breakdown property is missing.
 const BREAKDOWN_NONE: &str = "$$_none";
@@ -95,6 +96,8 @@ pub enum Math {
     /// Unique visitors.
     Dau,
     UniqueSessions,
+    /// Unique groups of type `math_group_type_index` (e.g. "unique companies").
+    UniqueGroup,
     Sum,
     Avg,
     Min,
@@ -155,7 +158,7 @@ impl Math {
             Math::P90 | Math::P90CountPerActor => "percentile_cont(0.9) WITHIN GROUP",
             Math::P95 | Math::P95CountPerActor => "percentile_cont(0.95) WITHIN GROUP",
             Math::P99 | Math::P99CountPerActor => "percentile_cont(0.99) WITHIN GROUP",
-            Math::Total | Math::Dau | Math::UniqueSessions => "COUNT",
+            Math::Total | Math::Dau | Math::UniqueSessions | Math::UniqueGroup => "COUNT",
         }
     }
 }
@@ -173,6 +176,9 @@ pub struct Series {
     pub math_property: Option<String>,
     #[serde(default)]
     pub math_property_type: PropertyType,
+    /// Group type for `math: unique_group`, or for a group `math_property`.
+    #[serde(default)]
+    pub math_group_type_index: Option<i16>,
     /// Filters that apply to this series only.
     #[serde(default)]
     pub properties: Vec<PropertyFilter>,
@@ -183,6 +189,9 @@ pub struct Breakdown {
     pub property: String,
     #[serde(rename = "type", default)]
     pub property_type: PropertyType,
+    /// Group type for `type: "group"` breakdowns.
+    #[serde(default)]
+    pub group_type_index: Option<i16>,
     #[serde(default)]
     pub limit: Option<i64>,
 }
@@ -227,12 +236,12 @@ impl TrendsQuery {
             j.add_group(g);
         }
         if let Some(b) = &self.breakdown {
-            j.add(b.property_type);
+            j.add(b.property_type, b.group_type_index);
         }
         for s in &self.series {
             j.add_filters(&s.properties);
             if s.math.needs_property() {
-                j.add(s.math_property_type);
+                j.add(s.math_property_type, s.math_group_type_index);
             }
         }
         j.into()
@@ -296,11 +305,21 @@ pub fn validate(q: &TrendsQuery) -> AppResult<()> {
                 .math_property
                 .as_deref()
                 .ok_or_else(|| bad_request("this math needs math_property"))?;
-            validate_property(key, s.math_property_type)?;
+            validate_property(key, s.math_property_type, s.math_group_type_index)?;
+        }
+        if s.math == Math::UniqueGroup
+            && !s
+                .math_group_type_index
+                .is_some_and(|i| (0..MAX_GROUP_TYPES).contains(&i))
+        {
+            return Err(bad_request(format!(
+                "unique_group math needs math_group_type_index 0-{}",
+                MAX_GROUP_TYPES - 1
+            )));
         }
     }
     if let Some(b) = &q.breakdown {
-        validate_property(&b.property, b.property_type)?;
+        validate_property(&b.property, b.property_type, b.group_type_index)?;
         let limit = b.limit.unwrap_or(DEFAULT_BREAKDOWN_LIMIT);
         if !(1..=MAX_BREAKDOWN_LIMIT).contains(&limit) {
             return Err(bad_request(format!(
@@ -344,10 +363,10 @@ impl<'a> Ctx<'a> {
             joins.add_group(g);
         }
         if let Some(b) = &q.breakdown {
-            joins.add(b.property_type);
+            joins.add(b.property_type, b.group_type_index);
         }
         if series.math.needs_property() {
-            joins.add(series.math_property_type);
+            joins.add(series.math_property_type, series.math_group_type_index);
         }
         Self {
             project_id,
@@ -394,7 +413,7 @@ impl<'a> Ctx<'a> {
         match &self.q.breakdown {
             Some(b) => {
                 qb.push("COALESCE(");
-                push_property_expr(qb, &b.property, b.property_type);
+                push_property_expr(qb, &b.property, b.property_type, b.group_type_index);
                 qb.push(", '$$_none')");
             }
             None => {
@@ -416,17 +435,25 @@ impl<'a> Ctx<'a> {
             Math::UniqueSessions => {
                 qb.push("COUNT(DISTINCT ev.session_id)::double precision");
             }
+            Math::UniqueGroup => {
+                // Validated to 0..MAX_GROUP_TYPES; NULL keys are not counted.
+                let i = self.series.math_group_type_index.unwrap_or_default();
+                qb.push(format!(
+                    "COUNT(DISTINCT ev.properties ->> '$group_{i}')::double precision"
+                ));
+            }
             _ => {
                 let key = self.series.math_property.as_deref().unwrap_or_default();
                 let t = self.series.math_property_type;
+                let g = self.series.math_group_type_index;
                 let agg = m.value_agg();
                 if agg.ends_with("WITHIN GROUP") {
                     qb.push(format!("{agg} (ORDER BY "));
-                    push_numeric_expr(qb, key, t);
+                    push_numeric_expr(qb, key, t, g);
                     qb.push(")");
                 } else {
                     qb.push(format!("{agg}("));
-                    push_numeric_expr(qb, key, t);
+                    push_numeric_expr(qb, key, t, g);
                     qb.push(")");
                 }
             }
@@ -750,14 +777,30 @@ pub async fn run_trends_actors(
         a.query.date_from,
         a.query.date_to,
     );
-    ctx.joins.person = true;
-
-    let mut qb = QueryBuilder::<Postgres>::new(
-        "SELECT ev.visitor_id, MAX(up.user_id) AS user_id, \
-         (array_agg(up.traits))[1] AS traits, COUNT(*) AS event_count, \
-         MIN(ev.created_at) AS first_at, MAX(ev.created_at) AS last_at",
-    );
+    // `unique_group` counts groups, so its actors are groups rather than people.
+    let group = (series.math == Math::UniqueGroup)
+        .then_some(series.math_group_type_index)
+        .flatten();
+    let actor = match group {
+        Some(i) => {
+            ctx.joins.groups |= 1 << i;
+            format!("(ev.properties ->> '$group_{i}')")
+        }
+        None => {
+            ctx.joins.person = true;
+            "ev.visitor_id".to_string()
+        }
+    };
+    let profile = match group {
+        Some(i) => format!("NULL::text AS user_id, (array_agg(g{i}.properties))[1] AS traits"),
+        None => "MAX(up.user_id) AS user_id, (array_agg(up.traits))[1] AS traits".to_string(),
+    };
+    let mut qb = QueryBuilder::<Postgres>::new(format!(
+        "SELECT {actor} AS actor, {profile}, COUNT(*) AS event_count, \
+         MIN(ev.created_at) AS first_at, MAX(ev.created_at) AS last_at"
+    ));
     ctx.push_from_where(&mut qb)?;
+    qb.push(format!(" AND {actor} IS NOT NULL"));
     qb.push(" AND ");
     ctx.push_bucket(&mut qb);
     qb.push(" = ");
@@ -783,7 +826,9 @@ pub async fn run_trends_actors(
             qb.push_bind(value);
         }
     }
-    qb.push(" GROUP BY ev.visitor_id ORDER BY event_count DESC, ev.visitor_id LIMIT ");
+    qb.push(format!(
+        " GROUP BY {actor} ORDER BY event_count DESC, {actor} LIMIT "
+    ));
     qb.push_bind(a.limit);
     qb.push(" OFFSET ");
     qb.push_bind(a.offset);
@@ -804,15 +849,23 @@ pub async fn run_trends_actors(
     let actors: Vec<Value> = rows
         .into_iter()
         .map(
-            |(visitor_id, user_id, traits, event_count, first_at, last_at)| {
-                json!({
-                    "visitor_id": visitor_id,
+            |(actor, user_id, traits, event_count, first_at, last_at)| match group {
+                Some(i) => json!({
+                    "group_type_index": i,
+                    "group_key": actor,
+                    "properties": traits.unwrap_or_else(|| json!({})),
+                    "event_count": event_count,
+                    "first_at": first_at,
+                    "last_at": last_at,
+                }),
+                None => json!({
+                    "visitor_id": actor,
                     "user_id": user_id,
                     "traits": traits.unwrap_or_else(|| json!({})),
                     "event_count": event_count,
                     "first_at": first_at,
                     "last_at": last_at,
-                })
+                }),
             },
         )
         .collect();

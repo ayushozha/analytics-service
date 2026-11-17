@@ -5,6 +5,7 @@ pub mod dashboards;
 pub mod docs;
 pub mod features;
 pub mod features_ext;
+pub mod groups;
 pub mod health;
 pub mod ingest;
 pub mod insights;
