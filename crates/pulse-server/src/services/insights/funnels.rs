@@ -21,7 +21,7 @@ use super::filters::{
 };
 use super::trends::{bucket_labels, Breakdown, Interval};
 use super::{
-    bad_request, map_query_error, push_event_source, EventSource, BREAKDOWN_OTHER,
+    bad_request, load_profiles, map_query_error, push_event_source, EventSource, BREAKDOWN_OTHER,
     DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT,
 };
 use crate::error::AppResult;
@@ -844,15 +844,7 @@ pub async fn run_funnel_actors(
     let total = visitors.len();
     let page: Vec<&Outcome> = visitors.into_iter().skip(a.offset).take(a.limit).collect();
     let ids: Vec<String> = page.iter().map(|o| o.visitor_id.clone()).collect();
-    let profiles: Vec<(String, Option<String>, Value)> = sqlx::query_as(
-        "SELECT visitor_id, user_id, traits FROM user_profiles WHERE project_id = $1 AND visitor_id = ANY($2)",
-    )
-    .bind(project_id)
-    .bind(&ids)
-    .fetch_all(db)
-    .await?;
-    let profiles: HashMap<String, (Option<String>, Value)> =
-        profiles.into_iter().map(|(v, u, t)| (v, (u, t))).collect();
+    let profiles = load_profiles(db, project_id, &ids).await?;
     let data: Vec<Value> = page
         .iter()
         .map(|o| {
