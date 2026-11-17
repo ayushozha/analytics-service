@@ -110,6 +110,9 @@ async fn main() -> anyhow::Result<()> {
     info!("Destination delivery task started");
 
     services::email_reports::start_email_report_task(state.clone());
+
+    // Scheduled alert evaluation (fires drop/outage alerts without traffic)
+    services::alerts::start_alert_evaluator_task(state.clone());
     info!("Email report scheduler started");
 
     // Build routes

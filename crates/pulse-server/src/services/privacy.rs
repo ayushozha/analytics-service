@@ -248,6 +248,14 @@ pub async fn export_visitor_data(
         visitor_id,
     )
     .await?;
+    let experiment_exposures = fetch_json_array(
+        db,
+        "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM \
+         (SELECT * FROM experiment_exposures WHERE project_id = $1 AND visitor_id = $2 ORDER BY first_exposed_at DESC) t",
+        project_id,
+        visitor_id,
+    )
+    .await?;
     let session_recordings = fetch_json_array(
         db,
         "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM \
@@ -280,6 +288,7 @@ pub async fn export_visitor_data(
         "goal_conversions": goal_conversions,
         "survey_responses": survey_responses,
         "experiment_assignments": experiment_assignments,
+        "experiment_exposures": experiment_exposures,
         "session_recordings": session_recordings,
         "telemetry": telemetry,
     }))
@@ -294,6 +303,7 @@ pub async fn delete_visitor_data(
         "session_recordings",
         "survey_responses",
         "experiment_assignments",
+        "experiment_exposures",
         "goal_conversions",
         "web_vitals",
         "scroll_depths",

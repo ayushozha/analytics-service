@@ -175,6 +175,9 @@ struct SessionInfo {
     project_name: String,
 }
 
+/// Dashboard sessions expire after 12 hours and must log in again.
+const SESSION_TTL_SECS: i64 = 12 * 60 * 60;
+
 fn sign_cookie_value(value: &str, secret: &str) -> String {
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("valid key");
     mac.update(value.as_bytes());
@@ -201,6 +204,12 @@ fn verify_cookie_value(signed: &str, secret: &str) -> Option<String> {
 fn get_session(jar: &CookieJar, state: &SharedState) -> Option<SessionInfo> {
     let cookie = jar.get(COOKIE_NAME)?;
     let value = verify_cookie_value(cookie.value(), &state.config.cookie_secret)?;
+    // Signed value format: "{expires_unix}|{project_id}:{project_name}".
+    // Cookies without an embedded expiry (issued before expiry existed) are rejected.
+    let (expires, value) = value.split_once('|')?;
+    if expires.parse::<i64>().ok()? <= Utc::now().timestamp() {
+        return None;
+    }
     let parts: Vec<&str> = value.splitn(2, ':').collect();
     if parts.len() != 2 {
         return None;
@@ -278,7 +287,8 @@ pub async fn login_submit(
     let result: Option<(Uuid, String, Vec<String>)> = sqlx::query_as(
         "SELECT ak.project_id, p.name, ak.scopes \
          FROM api_keys ak JOIN projects p ON p.id = ak.project_id \
-         WHERE ak.key_hash = $1 AND ak.is_active = true",
+         WHERE ak.key_hash = $1 AND ak.is_active = true \
+         AND (ak.expires_at IS NULL OR ak.expires_at > NOW())",
     )
     .bind(&key_hash)
     .fetch_optional(&state.db)
@@ -288,7 +298,8 @@ pub async fn login_submit(
 
     match result {
         Some((project_id, project_name, scopes)) if scopes.contains(&"query".to_string()) => {
-            let value = format!("{project_id}:{project_name}");
+            let expires = Utc::now() + Duration::seconds(SESSION_TTL_SECS);
+            let value = format!("{}|{project_id}:{project_name}", expires.timestamp());
             let signed = sign_cookie_value(&value, &state.config.cookie_secret);
             let cookie = Cookie::build((COOKIE_NAME, signed))
                 .path("/dashboard")

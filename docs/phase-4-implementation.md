@@ -63,13 +63,13 @@ Removed analytics handler, routes, and models from the portfolio's Rust engine s
 ```bash
 ssh ayush@72.62.82.57
 # Create pulse_analytics database
-PGPASSWORD='i87RfJUBx5HZJuykZt4v9u3zaq10wAqV' psql -h 127.0.0.1 -p 5433 -U admin -d postgres -c "CREATE DATABASE pulse_analytics;"
+PGPASSWORD='<POSTGRES_PASSWORD>' psql -h 127.0.0.1 -p 5433 -U admin -d postgres -c "CREATE DATABASE pulse_analytics;"
 ```
 
 ### 2. Redis ACL
 ```bash
 # Add pulse_analytics_user to Redis ACL on VPS
-redis-cli -p 6379 -a P0UnWC3CC7fsxV0Dsz2CgyDra19aL5iK
+redis-cli -p 6379 -a <REDIS_ADMIN_PASS>
 ACL SETUSER pulse_analytics_user on >{generated_password} ~pulse_analytics:* &* +@all
 ACL SAVE
 ```
@@ -84,7 +84,7 @@ Use `docker-compose.coolify.yml` with environment variables set in Coolify dashb
 ```bash
 # Via SSH tunnel
 ssh -L 5433:127.0.0.1:5433 ayush@72.62.82.57 -N &
-DATABASE_URL="postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@localhost:5433/pulse_analytics?sslmode=disable" \
+DATABASE_URL="postgres://admin:<POSTGRES_PASSWORD>@localhost:5433/pulse_analytics?sslmode=disable" \
   sqlx migrate run --source migrations/
 ```
 

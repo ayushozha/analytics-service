@@ -46,7 +46,10 @@ pub async fn get_stats(
 
     let duration = params.end_at - params.start_at;
     let prev_start = params.start_at - duration;
-    let prev_end = params.start_at;
+    // End the previous period just before the current one starts; daily
+    // rollups are date-inclusive, so ending exactly at start_at (often
+    // midnight) would count the current period's first day twice.
+    let prev_end = params.start_at - chrono::Duration::seconds(1);
     let today = Utc::now().date_naive();
 
     let current = qsvc::fetch_stats(

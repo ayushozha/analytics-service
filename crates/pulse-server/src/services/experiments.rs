@@ -159,10 +159,10 @@ pub async fn assign_visitor(
     experiment_id: Uuid,
     visitor_id: &str,
 ) -> Result<String, sqlx::Error> {
-    // Check if already assigned
+    // Check if already assigned (the exposure row is the source of truth)
     let existing: Option<(String,)> = sqlx::query_as(
-        "SELECT variant FROM experiment_assignments \
-         WHERE experiment_id = $1 AND visitor_id = $2 LIMIT 1",
+        "SELECT variant FROM experiment_exposures \
+         WHERE experiment_id = $1 AND visitor_id = $2",
     )
     .bind(experiment_id)
     .bind(visitor_id)
@@ -234,7 +234,32 @@ pub async fn assign_visitor(
 
     let variant = selected.clone();
 
-    // Insert assignment
+    // Record the first exposure exactly once. Concurrent first-touch requests
+    // race on the primary key; the loser reads back the winner's variant.
+    let inserted: Option<(String,)> = sqlx::query_as(
+        "INSERT INTO experiment_exposures (project_id, experiment_id, visitor_id, variant) \
+         VALUES ($1, $2, $3, $4) ON CONFLICT (experiment_id, visitor_id) DO NOTHING \
+         RETURNING variant",
+    )
+    .bind(project_id)
+    .bind(experiment_id)
+    .bind(visitor_id)
+    .bind(&variant)
+    .fetch_optional(db)
+    .await?;
+
+    let Some((variant,)) = inserted else {
+        let (existing,): (String,) = sqlx::query_as(
+            "SELECT variant FROM experiment_exposures WHERE experiment_id = $1 AND visitor_id = $2",
+        )
+        .bind(experiment_id)
+        .bind(visitor_id)
+        .fetch_one(db)
+        .await?;
+        return Ok(existing);
+    };
+
+    // Keep the append-only assignment log for history/auditing.
     sqlx::query(
         "INSERT INTO experiment_assignments (project_id, experiment_id, visitor_id, variant) \
          VALUES ($1, $2, $3, $4)",
@@ -280,9 +305,9 @@ pub async fn get_experiment_results(
 
     // Count assignments per variant
     let assignments: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT variant, COUNT(*)::bigint FROM experiment_assignments \
+        "SELECT variant, COUNT(*)::bigint FROM experiment_exposures \
          WHERE experiment_id = $1 AND project_id = $2 \
-         AND created_at >= $3 AND created_at <= $4 \
+         AND first_exposed_at >= $3 AND first_exposed_at <= $4 \
          GROUP BY variant ORDER BY variant",
     )
     .bind(experiment_id)
@@ -310,14 +335,16 @@ pub async fn get_experiment_results(
 
     let conversion_map: HashMap<String, i64> = if let Some(goal_id) = experiment.goal_id {
         sqlx::query_as::<_, (String, i64)>(
-            "SELECT ea.variant, COUNT(DISTINCT gc.visitor_id)::bigint \
-             FROM experiment_assignments ea \
-             INNER JOIN goal_conversions gc ON gc.visitor_id = ea.visitor_id \
-               AND gc.project_id = ea.project_id \
-             WHERE ea.experiment_id = $1 AND ea.project_id = $2 AND gc.goal_id = $3 \
-               AND ea.created_at >= $4 AND ea.created_at <= $5 \
-               AND gc.created_at >= $4 AND gc.created_at <= $5 \
-             GROUP BY ea.variant",
+            // Only conversions at or after the visitor's first exposure count;
+            // a visitor who converted before seeing the variant is not credited.
+            "SELECT ee.variant, COUNT(DISTINCT gc.visitor_id)::bigint \
+             FROM experiment_exposures ee \
+             INNER JOIN goal_conversions gc ON gc.visitor_id = ee.visitor_id \
+               AND gc.project_id = ee.project_id \
+             WHERE ee.experiment_id = $1 AND ee.project_id = $2 AND gc.goal_id = $3 \
+               AND ee.first_exposed_at >= $4 AND ee.first_exposed_at <= $5 \
+               AND gc.created_at >= ee.first_exposed_at AND gc.created_at <= $5 \
+             GROUP BY ee.variant",
         )
         .bind(experiment_id)
         .bind(project_id)

@@ -222,12 +222,25 @@ pub async fn delete_funnel(
     Ok(axum::Json(json!({ "ok": true })))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FunnelAnalyzeQuery {
+    pub start_at: DateTime<Utc>,
+    pub end_at: DateTime<Utc>,
+    /// `ordered` (default) or `unordered`.
+    #[serde(default)]
+    pub order: services::funnels::FunnelOrder,
+    /// Conversion window length (default 14).
+    pub window: Option<i64>,
+    /// `minute`, `hour`, `day` (default) or `week`.
+    pub window_unit: Option<String>,
+}
+
 // GET /api/v1/funnels/{id}/analyze
 pub async fn analyze_funnel(
     Extension(state): Extension<SharedState>,
     auth: AuthenticatedProject,
     Path(funnel_id): Path<Uuid>,
-    Query(params): Query<DateRangeQuery>,
+    Query(params): Query<FunnelAnalyzeQuery>,
 ) -> AppResult<impl IntoResponse> {
     auth.require_scope("query")?;
     services::modules::require_module_read(
@@ -238,12 +251,30 @@ pub async fn analyze_funnel(
     )
     .await?;
 
+    let window = params.window.unwrap_or(14);
+    let conversion_window = match params.window_unit.as_deref().unwrap_or("day") {
+        "minute" => chrono::Duration::try_minutes(window),
+        "hour" => chrono::Duration::try_hours(window),
+        "day" => chrono::Duration::try_days(window),
+        "week" => chrono::Duration::try_weeks(window),
+        other => {
+            return Err(crate::error::AppError::BadRequest(format!(
+                "Unknown window_unit '{other}' (use minute, hour, day or week)"
+            )))
+        }
+    }
+    .ok_or_else(|| crate::error::AppError::BadRequest("window is out of range".into()))?;
+
     let steps = services::funnels::analyze_funnel(
         &state.db,
         auth.project_id,
         funnel_id,
         params.start_at,
         params.end_at,
+        services::funnels::FunnelOptions {
+            order: params.order,
+            conversion_window,
+        },
     )
     .await?;
 

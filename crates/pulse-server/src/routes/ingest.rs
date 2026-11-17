@@ -771,7 +771,7 @@ fn evaluate_alerts_async(state: &SharedState, project_id: Uuid) {
     let state = state.clone();
     tokio::spawn(async move {
         match modules::is_module_enabled(&state, project_id, "alerts").await {
-            Ok(true) => alerts::evaluate_alerts(&state, project_id).await,
+            Ok(true) => alerts::evaluate_alerts_debounced(&state, project_id).await,
             Ok(false) => {}
             Err(e) => tracing::warn!("Failed to check alerts module before evaluation: {e}"),
         }
