@@ -26,6 +26,7 @@ pub mod marketing;
 pub mod modules;
 pub mod partition;
 pub mod paths;
+pub mod person_cohorts;
 pub mod privacy;
 pub mod product_analytics;
 pub mod product_insights;

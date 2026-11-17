@@ -223,17 +223,26 @@ pub async fn run(
         .await?;
     // Tiles that read person properties need identity access; other tiles
     // still render if the key lacks it.
-    let identity_ok = services::modules::require_module_read(
-        &state,
-        auth.project_id,
-        IDENTITY_MODULE,
-        &auth.allowed_modules,
-    )
-    .await
-    .is_ok();
+    let has = |module: &'static str| {
+        let state = state.clone();
+        let allowed = auth.allowed_modules.clone();
+        async move {
+            services::modules::require_module_read(&state, auth.project_id, module, &allowed)
+                .await
+                .is_ok()
+        }
+    };
+    let identity_ok = has(IDENTITY_MODULE).await;
+    let cohorts_ok = has("cohorts").await;
     let gate = move |q: &ParsedQuery| {
-        (!identity_ok && q.reads_person_properties())
-            .then(|| "this tile needs access to the identity module".to_string())
+        let n = q.data_needs();
+        if n.person && !identity_ok {
+            Some("this tile needs access to the identity module".to_string())
+        } else if n.cohorts && !cohorts_ok {
+            Some("this tile needs access to the cohorts module".to_string())
+        } else {
+            None
+        }
     };
     let d = dashboards::get(&state.db, auth.project_id, id).await?;
     let tiles = dashboards::run(&state.db, auth.project_id, &d, p.refresh, &gate).await?;
@@ -276,7 +285,9 @@ pub async fn shared(
     // The public view never exposes more than the link's creator could read.
     let allow_person = link.allow_person_data;
     let gate = move |q: &ParsedQuery| {
-        (!allow_person && q.reads_person_properties())
+        // Cohort membership is person data too.
+        let n = q.data_needs();
+        (!allow_person && (n.person || n.cohorts))
             .then(|| "this tile uses person data, which this link may not show".to_string())
     };
     if let Some(dashboard_id) = link.dashboard_id {

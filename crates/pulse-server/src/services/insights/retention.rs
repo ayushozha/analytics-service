@@ -121,8 +121,8 @@ impl RetentionQuery {
             .ok_or_else(|| bad_request("date range is out of bounds"))
     }
 
-    pub fn reads_person_properties(&self) -> bool {
-        self.as_trends(self.date_to).reads_person_properties()
+    pub fn data_needs(&self) -> super::filters::DataNeeds {
+        self.as_trends(self.date_to).data_needs()
     }
 }
 

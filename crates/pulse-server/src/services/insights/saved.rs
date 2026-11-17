@@ -120,14 +120,12 @@ impl ParsedQuery {
         Ok(parsed)
     }
 
-    pub fn reads_person_properties(&self) -> bool {
+    pub fn data_needs(&self) -> super::filters::DataNeeds {
         match self {
-            Self::Trends(t) | Self::Stickiness(t) | Self::Lifecycle(t) => {
-                t.reads_person_properties()
-            }
-            Self::Funnels(f) => f.reads_person_properties(),
-            Self::Retention(r) => r.reads_person_properties(),
-            Self::Paths(p) => p.reads_person_properties(),
+            Self::Trends(t) | Self::Stickiness(t) | Self::Lifecycle(t) => t.data_needs(),
+            Self::Funnels(f) => f.data_needs(),
+            Self::Retention(r) => r.data_needs(),
+            Self::Paths(p) => p.data_needs(),
         }
     }
 

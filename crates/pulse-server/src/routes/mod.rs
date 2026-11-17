@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod cohorts;
 pub mod dashboard;
 pub mod dashboards;
 pub mod docs;

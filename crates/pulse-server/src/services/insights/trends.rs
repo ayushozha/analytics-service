@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::filters::{
     push_and_filters, push_group, push_numeric_expr, push_property_expr, validate_property,
-    FilterGroup, Joins, PropertyFilter,
+    DataNeeds, FilterGroup, Joins, PropertyFilter,
 };
 use super::{
     bad_request, formula, map_query_error, push_event_source, EventSource, PropertyType,
@@ -219,8 +219,8 @@ pub struct TrendsQuery {
 }
 
 impl TrendsQuery {
-    /// True if the query reads person (profile) properties anywhere.
-    pub fn reads_person_properties(&self) -> bool {
+    /// Protected data the query reads (person properties, cohorts).
+    pub fn data_needs(&self) -> DataNeeds {
         let mut j = Joins::default();
         j.add_filters(&self.properties);
         if let Some(g) = &self.filter_group {
@@ -235,7 +235,7 @@ impl TrendsQuery {
                 j.add(s.math_property_type);
             }
         }
-        j.person
+        j.into()
     }
 }
 

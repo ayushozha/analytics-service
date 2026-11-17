@@ -139,7 +139,7 @@ pub async fn run(
     can_read(&state, &auth).await?;
     let insight = saved::get(&state.db, auth.project_id, id).await?;
     let parsed = saved::parse_saved(&insight)?;
-    authorize(&state, &auth, parsed.reads_person_properties()).await?;
+    authorize(&state, &auth, parsed.data_needs()).await?;
     Ok(Json(
         saved::run_saved(&state.db, auth.project_id, insight, &parsed, params.refresh).await?,
     ))

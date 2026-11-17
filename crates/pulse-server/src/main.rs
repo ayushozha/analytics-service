@@ -113,6 +113,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Scheduled alert evaluation (fires drop/outage alerts without traffic)
     services::alerts::start_alert_evaluator_task(state.clone());
+
+    // Recalculate stale dynamic person cohorts
+    services::person_cohorts::start_recalc_task(state.clone());
     info!("Email report scheduler started");
 
     // Build routes
@@ -230,6 +233,47 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/saved-insights/{id}/versions/{version}/restore",
             axum::routing::post(routes::saved_insights::restore),
+        )
+        // Person cohorts (v1 /api/v1/cohorts remains the acquisition cohort matrix)
+        .route(
+            "/api/v2/cohorts",
+            get(routes::cohorts::list).post(routes::cohorts::create),
+        )
+        .route(
+            "/api/v2/cohorts/from-actors",
+            axum::routing::post(routes::cohorts::from_actors),
+        )
+        .route(
+            "/api/v2/cohorts/{id}",
+            get(routes::cohorts::get)
+                .patch(routes::cohorts::update)
+                .delete(routes::cohorts::delete),
+        )
+        .route(
+            "/api/v2/cohorts/{id}/calculate",
+            axum::routing::post(routes::cohorts::calculate),
+        )
+        .route(
+            "/api/v2/cohorts/{id}/history",
+            get(routes::cohorts::history),
+        )
+        .route(
+            "/api/v2/cohorts/{id}/people",
+            get(routes::cohorts::people)
+                .post(routes::cohorts::add_people)
+                .delete(routes::cohorts::remove_people),
+        )
+        .route(
+            "/api/v2/cohorts/{id}/people.csv",
+            get(routes::cohorts::people_csv),
+        )
+        .route(
+            "/api/v2/cohorts/{id}/people/csv",
+            axum::routing::post(routes::cohorts::add_people_csv),
+        )
+        .route(
+            "/api/v2/cohorts/{id}/duplicate-static",
+            axum::routing::post(routes::cohorts::duplicate_static),
         )
         // Dashboards v2 (v1 paths remain the legacy custom dashboards used by the SDK)
         .route(

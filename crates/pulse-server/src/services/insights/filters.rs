@@ -75,12 +75,33 @@ pub struct FilterGroup {
 pub struct Joins {
     pub session: bool,
     pub person: bool,
+    /// A cohort filter is used (needs the `cohorts` module).
+    pub cohort: bool,
+}
+
+/// Which protected data a query reads, for module authorization.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DataNeeds {
+    /// Person (profile) properties: `identity` module.
+    pub person: bool,
+    /// Cohort membership: `cohorts` module.
+    pub cohorts: bool,
+}
+
+impl From<Joins> for DataNeeds {
+    fn from(j: Joins) -> Self {
+        Self {
+            person: j.person,
+            cohorts: j.cohort,
+        }
+    }
 }
 
 impl Joins {
     pub fn add(&mut self, t: PropertyType) {
         match t {
             PropertyType::Event => {}
+            PropertyType::Cohort => self.cohort = true,
             PropertyType::Session => self.session = true,
             PropertyType::Person => self.person = true,
         }
@@ -104,6 +125,11 @@ impl Joins {
 
 /// Validate a property reference before any SQL is built.
 pub fn validate_property(key: &str, t: PropertyType) -> AppResult<()> {
+    if t == PropertyType::Cohort {
+        return Err(bad_request(
+            "cohorts can only be used as filters (type \"cohort\", operator exact or is_not)",
+        ));
+    }
     if key.is_empty() || key.len() > 200 {
         return Err(bad_request("property key must be 1-200 characters"));
     }
@@ -129,6 +155,7 @@ pub fn push_property_expr(qb: &mut QueryBuilder<'_, Postgres>, key: &str, t: Pro
             debug_assert!(SESSION_PROPERTIES.contains(&key));
             qb.push(format!("(s.{key})::text"));
         }
+        PropertyType::Cohort => unreachable!("validate_property rejects cohort expressions"),
         PropertyType::Person => {
             if key == "user_id" {
                 qb.push("up.user_id");
@@ -206,8 +233,39 @@ fn escape_like(s: &str) -> String {
     out
 }
 
+/// Push `ev.visitor_id [NOT] IN <cohort members>`. The cohort must belong to
+/// the same project as the event row, so ids from other projects match nothing.
+fn push_cohort_filter(qb: &mut QueryBuilder<'_, Postgres>, f: &PropertyFilter) -> AppResult<()> {
+    let id: uuid::Uuid = f
+        .key
+        .parse()
+        .map_err(|_| bad_request("cohort filter key must be a cohort id"))?;
+    let negate = match f.operator {
+        Operator::Exact => false,
+        Operator::IsNot => true,
+        _ => {
+            return Err(bad_request(
+                "cohort filters support operator exact or is_not",
+            ))
+        }
+    };
+    qb.push(if negate { "NOT " } else { "" });
+    qb.push(
+        "EXISTS (SELECT 1 FROM cohort_people cp JOIN person_cohorts c ON c.id = cp.cohort_id \
+         WHERE cp.cohort_id = ",
+    );
+    qb.push_bind(id);
+    qb.push(
+        " AND cp.visitor_id = ev.visitor_id AND c.project_id = ev.project_id AND NOT c.deleted)",
+    );
+    Ok(())
+}
+
 /// Push one property predicate.
 pub fn push_filter(qb: &mut QueryBuilder<'_, Postgres>, f: &PropertyFilter) -> AppResult<()> {
+    if f.property_type == PropertyType::Cohort {
+        return push_cohort_filter(qb, f);
+    }
     validate_property(&f.key, f.property_type)?;
     let expr =
         |qb: &mut QueryBuilder<'_, Postgres>| push_property_expr(qb, &f.key, f.property_type);
@@ -439,6 +497,22 @@ mod tests {
         let deep: FilterGroup = serde_json::from_value(deep).unwrap();
         let mut qb = QueryBuilder::<Postgres>::new("");
         assert!(push_group(&mut qb, &deep).is_err());
+    }
+
+    #[test]
+    fn cohort_filter_is_project_scoped() {
+        let sql = sql_for(filter(json!({
+            "key": "6f1c1c1e-0000-0000-0000-000000000001", "type": "cohort", "value": true
+        })));
+        assert!(sql.contains("EXISTS (SELECT 1 FROM cohort_people cp JOIN person_cohorts c"));
+        assert!(sql.contains("c.project_id = ev.project_id"));
+        let sql = sql_for(filter(json!({
+            "key": "6f1c1c1e-0000-0000-0000-000000000001", "type": "cohort", "operator": "is_not"
+        })));
+        assert!(sql.contains("NOT EXISTS"));
+        let mut qb = QueryBuilder::<Postgres>::new("");
+        assert!(push_filter(&mut qb, &filter(json!({"key": "nope", "type": "cohort"}))).is_err());
+        assert!(validate_property("x", PropertyType::Cohort).is_err());
     }
 
     #[test]
