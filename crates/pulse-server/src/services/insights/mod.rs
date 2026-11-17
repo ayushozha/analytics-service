@@ -13,9 +13,15 @@
 
 pub mod filters;
 pub mod formula;
+pub mod funnels;
 pub mod trends;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::{Postgres, QueryBuilder};
+use uuid::Uuid;
+
+use filters::Joins;
 
 use crate::error::AppError;
 
@@ -84,4 +90,79 @@ pub(crate) fn map_query_error(e: sqlx::Error) -> AppError {
         }
     }
     AppError::Database(e)
+}
+
+/// Where events come from for one query.
+pub(crate) struct EventSource<'a> {
+    pub project_id: Uuid,
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
+    /// Event names to include (`$pageview` = pageviews); `None` = all events.
+    pub events: Option<&'a [String]>,
+    pub joins: Joins,
+}
+
+/// Push ` FROM (<virtual event stream>) ev [LEFT JOIN sessions s] [LEFT JOIN user_profiles up]`.
+/// Only the tables an event list needs are scanned.
+pub(crate) fn push_event_source(qb: &mut QueryBuilder<'_, Postgres>, src: &EventSource<'_>) {
+    let custom: Option<Vec<String>> = src.events.map(|names| {
+        names
+            .iter()
+            .filter(|n| n.as_str() != PAGEVIEW_EVENT)
+            .cloned()
+            .collect()
+    });
+    let want_pageviews = src
+        .events
+        .is_none_or(|names| names.iter().any(|n| n == PAGEVIEW_EVENT));
+    let want_events = custom.as_ref().is_none_or(|c| !c.is_empty());
+
+    qb.push(" FROM (");
+    if want_pageviews {
+        qb.push(
+            "SELECT '$pageview'::text AS event, p.visitor_id, p.session_id, p.created_at, \
+             jsonb_strip_nulls(jsonb_build_object('path', p.path, 'title', p.title, \
+             'referrer', p.referrer, 'referrer_domain', p.referrer_domain, \
+             'utm_source', p.utm_source, 'utm_medium', p.utm_medium, \
+             'utm_campaign', p.utm_campaign, 'utm_content', p.utm_content, \
+             'utm_term', p.utm_term)) AS properties \
+             FROM pageviews p WHERE p.project_id = ",
+        );
+        qb.push_bind(src.project_id);
+        qb.push(" AND p.created_at >= ");
+        qb.push_bind(src.from);
+        qb.push(" AND p.created_at < ");
+        qb.push_bind(src.to);
+    }
+    if want_pageviews && want_events {
+        qb.push(" UNION ALL ");
+    }
+    if want_events {
+        qb.push(
+            "SELECT e.event_name::text AS event, e.visitor_id, e.session_id, e.created_at, \
+             (CASE WHEN jsonb_typeof(e.event_data) = 'object' THEN e.event_data ELSE '{}'::jsonb END) \
+             || jsonb_strip_nulls(jsonb_build_object('path', e.path, \
+             'revenue', e.revenue_amount, 'revenue_currency', e.revenue_currency)) AS properties \
+             FROM events e WHERE e.project_id = ",
+        );
+        qb.push_bind(src.project_id);
+        qb.push(" AND e.created_at >= ");
+        qb.push_bind(src.from);
+        qb.push(" AND e.created_at < ");
+        qb.push_bind(src.to);
+        if let Some(names) = custom {
+            qb.push(" AND e.event_name = ANY(");
+            qb.push_bind(names);
+            qb.push(")");
+        }
+    }
+    qb.push(") ev");
+    if src.joins.session {
+        qb.push(" LEFT JOIN sessions s ON s.id = ev.session_id");
+    }
+    if src.joins.person {
+        qb.push(" LEFT JOIN user_profiles up ON up.project_id = ");
+        qb.push_bind(src.project_id);
+        qb.push(" AND up.visitor_id = ev.visitor_id");
+    }
 }

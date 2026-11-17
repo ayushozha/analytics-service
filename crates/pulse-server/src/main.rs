@@ -164,6 +164,14 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/insights/trends/actors",
             axum::routing::post(routes::insights::trends_actors),
         )
+        .route(
+            "/api/v1/insights/funnels",
+            axum::routing::post(routes::insights::funnels),
+        )
+        .route(
+            "/api/v1/insights/funnels/actors",
+            axum::routing::post(routes::insights::funnel_actors),
+        )
         // Funnels
         .route(
             "/api/v1/funnels",
