@@ -16,7 +16,8 @@ use super::trends::{bucket_labels, series_label, Ctx, TrendsQuery};
 use super::{bad_request, load_profiles, map_query_error};
 use crate::error::AppResult;
 
-fn validate_common(q: &TrendsQuery) -> AppResult<()> {
+/// Constraints for stickiness queries (also enforced when saving).
+pub(crate) fn validate_common(q: &TrendsQuery) -> AppResult<()> {
     super::trends::validate(q)?;
     if q.breakdown.is_some() || q.formula.is_some() {
         return Err(bad_request(
@@ -120,15 +121,21 @@ struct LifecycleData {
     first: HashMap<String, String>,
 }
 
+/// Constraints for lifecycle queries (also enforced when saving).
+pub(crate) fn validate_lifecycle(q: &TrendsQuery) -> AppResult<()> {
+    validate_common(q)?;
+    if q.series.len() != 1 {
+        return Err(bad_request("lifecycle takes exactly one series"));
+    }
+    Ok(())
+}
+
 async fn lifecycle_data(
     db: &PgPool,
     project_id: Uuid,
     q: &TrendsQuery,
 ) -> AppResult<LifecycleData> {
-    validate_common(q)?;
-    if q.series.len() != 1 {
-        return Err(bad_request("lifecycle takes exactly one series"));
-    }
+    validate_lifecycle(q)?;
     let labels = bucket_labels(db, &q.interval, &q.timezone, q.date_from, q.date_to).await?;
     // The bucket before the range is loaded separately so the first bucket can
     // be classified (returning/resurrecting/dormant) without counting events

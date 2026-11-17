@@ -1,6 +1,7 @@
 pub mod aggregation;
 pub mod ai;
 pub mod alerts;
+pub mod annotations;
 pub mod audit;
 pub mod bi;
 pub mod campaigns;

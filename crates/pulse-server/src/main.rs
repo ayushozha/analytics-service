@@ -204,6 +204,43 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/insights/paths/actors",
             axum::routing::post(routes::insights::paths_actors),
         )
+        // Saved insights + annotations
+        .route(
+            "/api/v1/saved-insights",
+            get(routes::saved_insights::list).post(routes::saved_insights::create),
+        )
+        .route(
+            "/api/v1/saved-insights/{id}",
+            get(routes::saved_insights::get)
+                .patch(routes::saved_insights::update)
+                .delete(routes::saved_insights::delete),
+        )
+        .route(
+            "/api/v1/saved-insights/{id}/run",
+            get(routes::saved_insights::run),
+        )
+        .route(
+            "/api/v1/saved-insights/{id}/duplicate",
+            axum::routing::post(routes::saved_insights::duplicate),
+        )
+        .route(
+            "/api/v1/saved-insights/{id}/versions",
+            get(routes::saved_insights::versions),
+        )
+        .route(
+            "/api/v1/saved-insights/{id}/versions/{version}/restore",
+            axum::routing::post(routes::saved_insights::restore),
+        )
+        .route(
+            "/api/v1/annotations",
+            get(routes::saved_insights::list_annotations)
+                .post(routes::saved_insights::create_annotation),
+        )
+        .route(
+            "/api/v1/annotations/{id}",
+            axum::routing::patch(routes::saved_insights::update_annotation)
+                .delete(routes::saved_insights::delete_annotation),
+        )
         // Funnels
         .route(
             "/api/v1/funnels",
