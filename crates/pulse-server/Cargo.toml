@@ -42,6 +42,8 @@ rand = "0.10"
 base64 = "0.22"
 hex = "0.4"
 url = "2"
+# Path cleaning rules (RE2-style, same family as PostHog/ClickHouse)
+regex = "1"
 
 # User-Agent parsing
 woothee = "0.13"
