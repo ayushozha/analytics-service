@@ -18,6 +18,7 @@ pub mod governance;
 pub mod heatmaps;
 pub mod identity;
 pub mod ingestion;
+pub mod insights;
 pub mod integrations;
 pub mod marketing;
 pub mod modules;
