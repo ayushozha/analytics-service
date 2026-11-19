@@ -15,8 +15,9 @@ use super::filters::{
     DataNeeds, FilterGroup, Joins, PropertyFilter,
 };
 use super::{
-    bad_request, formula, map_query_error, push_event_source, EventSource, PropertyType,
-    BREAKDOWN_OTHER, DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT, MAX_BUCKETS, MAX_SERIES,
+    actor_expr, bad_request, formula, map_query_error, push_event_source, validate_aggregation,
+    EventSource, PropertyType, BREAKDOWN_OTHER, DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT,
+    MAX_BUCKETS, MAX_SERIES,
 };
 use crate::error::AppResult;
 use crate::services::groups::MAX_GROUP_TYPES;
@@ -225,6 +226,10 @@ pub struct TrendsQuery {
     /// Moving average over this many intervals (1 = off).
     #[serde(default)]
     pub smoothing_intervals: Option<usize>,
+    /// Count groups of this type instead of people (unique users, per-actor
+    /// math, actors), as PostHog's `aggregation_group_type_index`.
+    #[serde(default)]
+    pub aggregation_group_type_index: Option<i16>,
 }
 
 impl TrendsQuery {
@@ -294,6 +299,7 @@ pub fn validate(q: &TrendsQuery) -> AppResult<()> {
     if q.timezone.is_empty() || q.timezone.len() > 64 {
         return Err(bad_request("invalid timezone"));
     }
+    validate_aggregation(q.aggregation_group_type_index)?;
     for s in &q.series {
         if let Some(e) = &s.event {
             if e.is_empty() || e.len() > 255 {
@@ -378,7 +384,13 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    /// `FROM (<virtual events>) ev [joins] WHERE <filters>`
+    /// SQL for the actor this query counts (visitor, or group key).
+    pub(crate) fn actor(&self) -> String {
+        actor_expr(self.q.aggregation_group_type_index)
+    }
+
+    /// `FROM (<virtual events>) ev [joins] WHERE <filters>`; when aggregating
+    /// by group, events without a group of that type are skipped.
     pub(crate) fn push_from_where(&self, qb: &mut QueryBuilder<'_, Postgres>) -> AppResult<()> {
         let events: Vec<String> = self.series.event.iter().cloned().collect();
         push_event_source(
@@ -396,6 +408,9 @@ impl<'a> Ctx<'a> {
         push_and_filters(qb, &self.series.properties)?;
         if let Some(g) = &self.q.filter_group {
             push_group(qb, g)?;
+        }
+        if self.q.aggregation_group_type_index.is_some() {
+            qb.push(format!(" AND {} IS NOT NULL", self.actor()));
         }
         Ok(())
     }
@@ -430,7 +445,10 @@ impl<'a> Ctx<'a> {
                 qb.push("COUNT(*)::double precision");
             }
             Math::Dau => {
-                qb.push("COUNT(DISTINCT ev.visitor_id)::double precision");
+                qb.push(format!(
+                    "COUNT(DISTINCT {})::double precision",
+                    self.actor()
+                ));
             }
             Math::UniqueSessions => {
                 qb.push("COUNT(DISTINCT ev.session_id)::double precision");
@@ -502,7 +520,7 @@ impl<'a> Ctx<'a> {
             self.push_bucket(&mut qb);
             qb.push(" AS bucket, ");
             push_bd(&mut qb);
-            qb.push(" AS bd, ev.visitor_id, COUNT(*) AS c");
+            qb.push(format!(" AS bd, {} AS actor, COUNT(*) AS c", self.actor()));
             self.push_from_where(&mut qb)?;
             qb.push(" GROUP BY 1, 2, 3) per_actor GROUP BY 1, 2");
         } else {
@@ -780,7 +798,8 @@ pub async fn run_trends_actors(
     // `unique_group` counts groups, so its actors are groups rather than people.
     let group = (series.math == Math::UniqueGroup)
         .then_some(series.math_group_type_index)
-        .flatten();
+        .flatten()
+        .or(a.query.aggregation_group_type_index);
     let actor = match group {
         Some(i) => {
             ctx.joins.groups |= 1 << i;
@@ -886,6 +905,23 @@ mod tests {
             "date_from": "2026-11-01T00:00:00Z",
             "date_to": "2026-11-08T00:00:00Z"
         })
+    }
+
+    #[test]
+    fn aggregation_by_group_counts_group_keys() {
+        let mut v = base();
+        v["aggregation_group_type_index"] = json!(2);
+        let q = query(v.clone());
+        assert!(validate(&q).is_ok());
+        let ctx = Ctx::new(Uuid::nil(), &q, &q.series[0], q.date_from, q.date_to);
+        assert_eq!(ctx.actor(), "(ev.properties ->> '$group_2')");
+        let mut qb = QueryBuilder::<Postgres>::new("SELECT 1");
+        ctx.push_from_where(&mut qb).unwrap();
+        assert!(qb
+            .sql()
+            .ends_with(" AND (ev.properties ->> '$group_2') IS NOT NULL"));
+        v["aggregation_group_type_index"] = json!(5);
+        assert!(validate(&query(v)).is_err());
     }
 
     #[test]

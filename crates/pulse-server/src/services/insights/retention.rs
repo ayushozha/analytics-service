@@ -16,7 +16,7 @@ use super::trends::{
     breakdown_output, bucket_labels, shared_breakdown, Breakdown, Ctx, Interval, Math, Series,
     TrendsQuery,
 };
-use super::{bad_request, load_profiles, map_query_error, BREAKDOWN_OTHER};
+use super::{bad_request, load_actors, map_query_error, BREAKDOWN_OTHER};
 use crate::error::AppResult;
 
 pub const MAX_INTERVALS: usize = 120;
@@ -66,6 +66,9 @@ pub struct RetentionQuery {
     /// Count a visitor in interval N if they returned in N or any later interval.
     #[serde(default)]
     pub cumulative: bool,
+    /// Retain groups of this type instead of people.
+    #[serde(default)]
+    pub aggregation_group_type_index: Option<i16>,
 }
 
 fn default_intervals() -> usize {
@@ -105,6 +108,7 @@ impl RetentionQuery {
             formula: None,
             cumulative: false,
             smoothing_intervals: None,
+            aggregation_group_type_index: self.aggregation_group_type_index,
         }
     }
 
@@ -184,7 +188,7 @@ async fn load(
         .enumerate()
     {
         let ctx = Ctx::new(project_id, &t, &t.series[si], from, to);
-        let mut qb = QueryBuilder::<Postgres>::new("SELECT ev.visitor_id, ");
+        let mut qb = QueryBuilder::<Postgres>::new(format!("SELECT {}, ", ctx.actor()));
         ctx.push_bucket(&mut qb);
         qb.push(" AS bucket, MIN(");
         ctx.push_breakdown_raw(&mut qb);
@@ -214,7 +218,7 @@ async fn load(
     if q.retention_type == RetentionType::FirstTime {
         let epoch = DateTime::<Utc>::UNIX_EPOCH;
         let ctx = Ctx::new(project_id, &t, &t.series[0], epoch, q.date_from);
-        let mut qb = QueryBuilder::<Postgres>::new("SELECT DISTINCT ev.visitor_id");
+        let mut qb = QueryBuilder::<Postgres>::new(format!("SELECT DISTINCT {}", ctx.actor()));
         ctx.push_from_where(&mut qb)?;
         let earlier: Vec<(String,)> = qb
             .build_query_as()
@@ -356,14 +360,7 @@ pub async fn run_retention_actors(
     ids.dedup();
     let total = ids.len();
     let page: Vec<String> = ids.into_iter().skip(a.offset).take(a.limit).collect();
-    let profiles = load_profiles(db, project_id, &page).await?;
-    let data: Vec<Value> = page
-        .iter()
-        .map(|v| {
-            let (user_id, traits) = profiles.get(v).cloned().unwrap_or((None, json!({})));
-            json!({ "visitor_id": v, "user_id": user_id, "traits": traits })
-        })
-        .collect();
+    let data = load_actors(db, project_id, a.query.aggregation_group_type_index, &page).await?;
     Ok(json!({ "data": data, "total": total, "limit": a.limit, "offset": a.offset }))
 }
 

@@ -21,8 +21,8 @@ use super::filters::{
 };
 use super::trends::{bucket_labels, Breakdown, Interval};
 use super::{
-    bad_request, load_profiles, map_query_error, push_event_source, EventSource, BREAKDOWN_OTHER,
-    DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT,
+    actor_expr, bad_request, load_actors, map_query_error, push_event_source, validate_aggregation,
+    EventSource, BREAKDOWN_OTHER, DEFAULT_BREAKDOWN_LIMIT, MAX_BREAKDOWN_LIMIT,
 };
 use crate::error::AppResult;
 
@@ -150,6 +150,9 @@ pub struct FunnelsQuery {
     /// For `time_to_convert`: number of histogram bins.
     #[serde(default)]
     pub bins: Option<usize>,
+    /// Convert groups of this type through the funnel instead of people.
+    #[serde(default)]
+    pub aggregation_group_type_index: Option<i16>,
 }
 
 fn default_tz() -> String {
@@ -197,6 +200,7 @@ impl FunnelsQuery {
 }
 
 pub fn validate(q: &FunnelsQuery) -> AppResult<()> {
+    validate_aggregation(q.aggregation_group_type_index)?;
     if !(MIN_STEPS..=MAX_STEPS).contains(&q.steps.len()) {
         return Err(bad_request(format!(
             "funnels need {MIN_STEPS}-{MAX_STEPS} steps"
@@ -435,9 +439,9 @@ fn attributed_breakdown(evs: &[Ev], q: &FunnelsQuery, a: &Attempt) -> String {
     pick.map(|&i| evs[i].bd.clone()).unwrap_or_default()
 }
 
-/// Per-visitor outcome used by every visualisation.
+/// Per-actor (visitor or group) outcome used by every visualisation.
 struct Outcome {
-    visitor_id: String,
+    actor: String,
     bd: String,
     reached: usize,
     times: Vec<f64>,
@@ -446,9 +450,10 @@ struct Outcome {
 
 async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppResult<Vec<Outcome>> {
     validate(q)?;
-    let mut qb = QueryBuilder::<Postgres>::new(
-        "SELECT ev.visitor_id, EXTRACT(EPOCH FROM ev.created_at)::double precision, ARRAY[",
-    );
+    let actor = actor_expr(q.aggregation_group_type_index);
+    let mut qb = QueryBuilder::<Postgres>::new(format!(
+        "SELECT {actor}, EXTRACT(EPOCH FROM ev.created_at)::double precision, ARRAY["
+    ));
     let push_step_pred = |qb: &mut QueryBuilder<'_, Postgres>,
                           event: &Option<String>,
                           props: &[PropertyFilter]|
@@ -525,7 +530,7 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
             joins: q.joins(),
         },
     );
-    qb.push(" WHERE TRUE");
+    qb.push(format!(" WHERE {actor} IS NOT NULL"));
     push_and_filters(&mut qb, &q.properties)?;
     if let Some(g) = &q.filter_group {
         push_group(&mut qb, g)?;
@@ -542,7 +547,7 @@ async fn load_outcomes(db: &PgPool, project_id: Uuid, q: &FunnelsQuery) -> AppRe
         }
         qb.push(")");
     }
-    qb.push(" ORDER BY ev.visitor_id, ev.created_at LIMIT ");
+    qb.push(format!(" ORDER BY {actor}, ev.created_at LIMIT "));
     qb.push_bind(MAX_FUNNEL_EVENTS + 1);
 
     type Row = (String, f64, Vec<bool>, Vec<bool>, String, String);
@@ -594,7 +599,7 @@ fn compute_outcomes(
             continue;
         }
         outcomes.push(Outcome {
-            visitor_id: visitor,
+            actor: visitor,
             bd: attributed_breakdown(&evs, q, &a),
             reached: a.reached,
             times: a.idx.iter().map(|&j| evs[j].ts).collect(),
@@ -840,25 +845,18 @@ pub async fn run_funnel_actors(
             }
         })
         .collect();
-    visitors.sort_by(|x, y| x.visitor_id.cmp(&y.visitor_id));
+    visitors.sort_by(|x, y| x.actor.cmp(&y.actor));
     let total = visitors.len();
     let page: Vec<&Outcome> = visitors.into_iter().skip(a.offset).take(a.limit).collect();
-    let ids: Vec<String> = page.iter().map(|o| o.visitor_id.clone()).collect();
-    let profiles = load_profiles(db, project_id, &ids).await?;
+    let ids: Vec<String> = page.iter().map(|o| o.actor.clone()).collect();
+    let actors = load_actors(db, project_id, q.aggregation_group_type_index, &ids).await?;
     let data: Vec<Value> = page
         .iter()
-        .map(|o| {
-            let (user_id, traits) = profiles
-                .get(&o.visitor_id)
-                .cloned()
-                .unwrap_or((None, json!({})));
-            json!({
-                "visitor_id": o.visitor_id,
-                "user_id": user_id,
-                "traits": traits,
-                "steps_reached": o.reached,
-                "entered_at": DateTime::<Utc>::from_timestamp(o.times[0] as i64, 0),
-            })
+        .zip(actors)
+        .map(|(o, mut actor)| {
+            actor["steps_reached"] = json!(o.reached);
+            actor["entered_at"] = json!(DateTime::<Utc>::from_timestamp(o.times[0] as i64, 0));
+            actor
         })
         .collect();
     Ok(json!({ "data": data, "total": total, "limit": a.limit, "offset": a.offset }))
