@@ -13,7 +13,7 @@ use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use super::trends::{bucket_labels, series_label, Ctx, TrendsQuery};
-use super::{bad_request, load_profiles, map_query_error};
+use super::{bad_request, load_actors, map_query_error};
 use crate::error::AppResult;
 
 /// Constraints for stickiness queries (also enforced when saving).
@@ -32,7 +32,7 @@ pub(crate) fn validate_common(q: &TrendsQuery) -> AppResult<()> {
 
 /// visitor -> number of distinct active intervals, for one series.
 async fn active_intervals(db: &PgPool, ctx: &Ctx<'_>) -> AppResult<Vec<(String, i64)>> {
-    let mut qb = QueryBuilder::<Postgres>::new("SELECT ev.visitor_id, COUNT(DISTINCT ");
+    let mut qb = QueryBuilder::<Postgres>::new(format!("SELECT {}, COUNT(DISTINCT ", ctx.actor()));
     ctx.push_bucket(&mut qb);
     qb.push(")");
     ctx.push_from_where(&mut qb)?;
@@ -157,7 +157,7 @@ async fn lifecycle_data(
     let mut active: HashMap<String, HashSet<String>> = HashMap::new();
     for (from, to) in [(prev_start, first_start), (q.date_from, q.date_to)] {
         let ctx = Ctx::new(project_id, q, series, from, to);
-        let mut qb = QueryBuilder::<Postgres>::new("SELECT DISTINCT ev.visitor_id, ");
+        let mut qb = QueryBuilder::<Postgres>::new(format!("SELECT DISTINCT {}, ", ctx.actor()));
         ctx.push_bucket(&mut qb);
         ctx.push_from_where(&mut qb)?;
         let rows: Vec<(String, String)> = qb
@@ -179,11 +179,11 @@ async fn lifecycle_data(
         DateTime::<Utc>::UNIX_EPOCH,
         q.date_to,
     );
-    let mut qb = QueryBuilder::<Postgres>::new("SELECT ev.visitor_id, MIN(");
+    let mut qb = QueryBuilder::<Postgres>::new(format!("SELECT {}, MIN(", ctx.actor()));
     ctx.push_bucket(&mut qb);
     qb.push(")");
     ctx.push_from_where(&mut qb)?;
-    qb.push(" AND ev.visitor_id = ANY(");
+    qb.push(format!(" AND {} = ANY(", ctx.actor()));
     qb.push_bind(ids);
     qb.push(") GROUP BY 1");
     let first: Vec<(String, String)> = qb
@@ -282,14 +282,7 @@ pub async fn run_lifecycle_actors(
     ids.sort();
     let total = ids.len();
     let page: Vec<String> = ids.into_iter().skip(offset).take(limit).collect();
-    let profiles = load_profiles(db, project_id, &page).await?;
-    let data: Vec<Value> = page
-        .iter()
-        .map(|v| {
-            let (user_id, traits) = profiles.get(v).cloned().unwrap_or((None, json!({})));
-            json!({ "visitor_id": v, "user_id": user_id, "traits": traits })
-        })
-        .collect();
+    let data = load_actors(db, project_id, q.aggregation_group_type_index, &page).await?;
     Ok(json!({ "data": data, "total": total, "limit": limit, "offset": offset }))
 }
 
@@ -328,14 +321,7 @@ pub async fn run_stickiness_actors(
     ids.sort();
     let total = ids.len();
     let page: Vec<String> = ids.into_iter().skip(offset).take(limit).collect();
-    let profiles = load_profiles(db, project_id, &page).await?;
-    let data: Vec<Value> = page
-        .iter()
-        .map(|v| {
-            let (user_id, traits) = profiles.get(v).cloned().unwrap_or((None, json!({})));
-            json!({ "visitor_id": v, "user_id": user_id, "traits": traits })
-        })
-        .collect();
+    let data = load_actors(db, project_id, q.aggregation_group_type_index, &page).await?;
     Ok(json!({ "data": data, "total": total, "limit": limit, "offset": offset }))
 }
 

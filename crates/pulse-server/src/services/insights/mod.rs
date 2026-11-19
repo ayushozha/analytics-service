@@ -202,3 +202,63 @@ pub(crate) async fn load_profiles(
     .await?;
     Ok(rows.into_iter().map(|(v, u, t)| (v, (u, t))).collect())
 }
+
+/// SQL for the actor a query counts: the visitor, or (PostHog
+/// `aggregation_group_type_index`) the key of the event's group of that type.
+/// `group` must already be validated with [`validate_aggregation`].
+pub(crate) fn actor_expr(group: Option<i16>) -> String {
+    match group {
+        Some(i) => format!("(ev.properties ->> '$group_{i}')"),
+        None => "ev.visitor_id".to_string(),
+    }
+}
+
+pub(crate) fn validate_aggregation(group: Option<i16>) -> Result<(), AppError> {
+    match group {
+        Some(i) if !(0..crate::services::groups::MAX_GROUP_TYPES).contains(&i) => {
+            Err(bad_request(format!(
+                "aggregation_group_type_index must be 0-{}",
+                crate::services::groups::MAX_GROUP_TYPES - 1
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Actor objects for a page of ids, in order: people (`visitor_id`, `user_id`,
+/// `traits`) or groups of type `group` (`group_type_index`, `group_key`, `properties`).
+pub(crate) async fn load_actors(
+    db: &PgPool,
+    project_id: Uuid,
+    group: Option<i16>,
+    ids: &[String],
+) -> Result<Vec<serde_json::Value>, sqlx::Error> {
+    use serde_json::json;
+    let Some(i) = group else {
+        let profiles = load_profiles(db, project_id, ids).await?;
+        return Ok(ids
+            .iter()
+            .map(|v| {
+                let (user_id, traits) = profiles.get(v).cloned().unwrap_or((None, json!({})));
+                json!({ "visitor_id": v, "user_id": user_id, "traits": traits })
+            })
+            .collect());
+    };
+    let rows: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT group_key, properties FROM groups \
+         WHERE project_id = $1 AND group_type_index = $2 AND group_key = ANY($3)",
+    )
+    .bind(project_id)
+    .bind(i)
+    .bind(ids)
+    .fetch_all(db)
+    .await?;
+    let props: HashMap<String, serde_json::Value> = rows.into_iter().collect();
+    Ok(ids
+        .iter()
+        .map(|k| {
+            json!({ "group_type_index": i, "group_key": k,
+                    "properties": props.get(k).cloned().unwrap_or_else(|| json!({})) })
+        })
+        .collect())
+}
