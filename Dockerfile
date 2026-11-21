@@ -6,6 +6,14 @@ RUN npm ci
 COPY sdk/src/ src/
 RUN npm run build
 
+# Stage 1b: Build the web app (served by the Rust server at /app)
+FROM node:24.15.0-slim AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 # Stage 2: Build the Rust server
 FROM rust:1.95.0-slim-trixie AS builder
 WORKDIR /app
@@ -48,6 +56,7 @@ RUN groupadd --gid 1001 appgroup && \
 
 COPY --from=builder /app/target/release/pulse-server .
 COPY --from=builder /app/migrations/ ./migrations/
+COPY --from=web-builder /web/dist/ ./web/dist/
 
 RUN mkdir -p /app/data && chown -R appuser:appgroup /app
 

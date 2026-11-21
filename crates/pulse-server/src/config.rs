@@ -19,6 +19,8 @@ pub struct Config {
     pub data_retention_days: u32,
     pub cookie_secret: String,
     pub email_report_webhook_url: Option<String>,
+    /// Directory holding the built web app (`web/dist`), served at `/app`.
+    pub web_dist_dir: String,
 }
 
 impl Config {
@@ -71,6 +73,7 @@ impl Config {
                 secret
             }),
             email_report_webhook_url: env::var("EMAIL_REPORT_WEBHOOK_URL").ok(),
+            web_dist_dir: env::var("PULSE_WEB_DIR").unwrap_or_else(|_| "web/dist".to_string()),
         }
     }
 

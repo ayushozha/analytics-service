@@ -13,3 +13,4 @@ pub mod persons;
 pub mod query;
 pub mod saved_insights;
 pub mod script;
+pub mod web;
