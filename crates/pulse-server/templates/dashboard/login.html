@@ -13,6 +13,7 @@
         </div>
         {% endif %}
         <form action="/dashboard/login" method="post">
+            {% if let Some(next) = next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
             <label for="api_key" class="block text-sm font-medium text-gray-700 mb-1.5">API Key</label>
             <input type="text" name="api_key" id="api_key" required
                 placeholder="pa_live_..."

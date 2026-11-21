@@ -24,6 +24,7 @@ const COOKIE_NAME: &str = "pulse_session";
 #[template(path = "dashboard/login.html")]
 struct LoginTemplate {
     error: Option<String>,
+    next: Option<String>,
 }
 
 #[derive(Template)]
@@ -148,6 +149,18 @@ struct StatCard {
 #[derive(Deserialize)]
 pub struct LoginForm {
     api_key: String,
+    next: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct NextParam {
+    next: Option<String>,
+}
+
+/// Where to go after login. Only same-app paths under `/app` are honoured,
+/// so the parameter can't be used as an open redirect.
+fn safe_next(next: Option<String>) -> Option<String> {
+    next.filter(|n| n == "/app" || (n.starts_with("/app/") && !n.contains("//")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,9 +183,9 @@ pub struct FunnelParams {
     pub steps: Option<String>,
 }
 
-struct SessionInfo {
-    project_id: Uuid,
-    project_name: String,
+pub(crate) struct SessionInfo {
+    pub(crate) project_id: Uuid,
+    pub(crate) project_name: String,
 }
 
 /// Dashboard sessions expire after 12 hours and must log in again.
@@ -201,7 +214,7 @@ fn verify_cookie_value(signed: &str, secret: &str) -> Option<String> {
     }
 }
 
-fn get_session(jar: &CookieJar, state: &SharedState) -> Option<SessionInfo> {
+pub(crate) fn get_session(jar: &CookieJar, state: &SharedState) -> Option<SessionInfo> {
     let cookie = jar.get(COOKIE_NAME)?;
     let value = verify_cookie_value(cookie.value(), &state.config.cookie_secret)?;
     // Signed value format: "{expires_unix}|{project_id}:{project_name}".
@@ -270,8 +283,11 @@ pub async fn dashboard_index(Extension(state): Extension<SharedState>, jar: Cook
     }
 }
 
-pub async fn login_page() -> Response {
-    render_template(LoginTemplate { error: None })
+pub async fn login_page(Query(params): Query<NextParam>) -> Response {
+    render_template(LoginTemplate {
+        error: None,
+        next: safe_next(params.next),
+    })
 }
 
 pub async fn login_submit(
@@ -280,6 +296,7 @@ pub async fn login_submit(
     Form(input): Form<LoginForm>,
 ) -> Response {
     let key = &input.api_key;
+    let next = safe_next(input.next);
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
     let key_hash = hex::encode(hasher.finalize());
@@ -302,25 +319,33 @@ pub async fn login_submit(
             let value = format!("{}|{project_id}:{project_name}", expires.timestamp());
             let signed = sign_cookie_value(&value, &state.config.cookie_secret);
             let cookie = Cookie::build((COOKIE_NAME, signed))
-                .path("/dashboard")
+                // Path "/" so the same session also authenticates the web app
+                // (`/app`) and its same-origin API calls.
+                .path("/")
                 .http_only(true)
                 .same_site(axum_extra::extract::cookie::SameSite::Lax)
                 .build();
 
             let jar = jar.add(cookie);
-            (jar, Redirect::to("/dashboard/overview")).into_response()
+            let to = next.as_deref().unwrap_or("/dashboard/overview");
+            (jar, Redirect::to(to)).into_response()
         }
         Some(_) => render_template(LoginTemplate {
             error: Some("API key does not have 'query' scope".to_string()),
+            next,
         }),
         None => render_template(LoginTemplate {
             error: Some("Invalid API key".to_string()),
+            next,
         }),
     }
 }
 
 pub async fn logout(jar: CookieJar) -> Response {
-    let jar = jar.remove(Cookie::from(COOKIE_NAME));
+    // Also clear cookies issued before the path moved from /dashboard to /.
+    let jar = jar
+        .remove(Cookie::build(COOKIE_NAME).path("/"))
+        .remove(Cookie::build(COOKIE_NAME).path("/dashboard"));
     (jar, Redirect::to("/dashboard/login")).into_response()
 }
 
@@ -1766,4 +1791,43 @@ fn render_two_col_table(
 
     html.push_str("</tbody></table></div>");
     Html(html).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_next_only_allows_app_paths() {
+        let ok = |s: &str| safe_next(Some(s.to_string()));
+        assert_eq!(ok("/app").as_deref(), Some("/app"));
+        assert_eq!(ok("/app/persons/abc").as_deref(), Some("/app/persons/abc"));
+        assert_eq!(
+            ok("/app/insights?x=1").as_deref(),
+            Some("/app/insights?x=1")
+        );
+        for bad in [
+            "https://evil.test",
+            "//evil.test",
+            "/apps",
+            "/app//evil.test",
+            "/dashboard",
+            "app",
+        ] {
+            assert_eq!(ok(bad), None, "{bad} must be rejected");
+        }
+        assert_eq!(safe_next(None), None);
+    }
+
+    #[test]
+    fn signed_cookie_round_trips_and_rejects_tampering() {
+        let signed = sign_cookie_value("123|abc:Acme", "secret");
+        assert_eq!(
+            verify_cookie_value(&signed, "secret").as_deref(),
+            Some("123|abc:Acme")
+        );
+        assert_eq!(verify_cookie_value(&signed, "other-secret"), None);
+        let tampered = signed.replacen("Acme", "Evil", 1);
+        assert_eq!(verify_cookie_value(&tampered, "secret"), None);
+    }
 }

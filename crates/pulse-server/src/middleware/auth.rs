@@ -12,6 +12,11 @@ use crate::state::SharedState;
 
 const API_KEY_CACHE_TTL: u64 = 300; // 5 minutes
 
+/// Header the web app sends with every API call. Cookie-authenticated requests
+/// must carry it: browsers won't attach a custom header to a cross-site request
+/// without a CORS preflight, so this blocks CSRF on top of `SameSite=Lax`.
+pub const WEB_APP_HEADER: &str = "x-pulse-web";
+
 #[derive(Debug, Clone)]
 pub struct AuthenticatedProject {
     pub project_id: uuid::Uuid,
@@ -49,7 +54,7 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Result<Response, AppError> {
     // Extract API key from header or query param
-    let key = request
+    let key = match request
         .headers()
         .get("x-pulse-key")
         .and_then(|v| v.to_str().ok())
@@ -65,8 +70,28 @@ pub async fn auth_middleware(
                     }
                 })
             })
-        })
-        .ok_or(AppError::Unauthorized)?;
+        }) {
+        Some(key) => key,
+        None => {
+            // No API key: fall back to the dashboard session cookie (web app).
+            let session = request
+                .headers()
+                .contains_key(WEB_APP_HEADER)
+                .then(|| {
+                    let jar = axum_extra::extract::CookieJar::from_headers(request.headers());
+                    crate::routes::dashboard::get_session(&jar, &state)
+                })
+                .flatten()
+                .ok_or(AppError::Unauthorized)?;
+            request.extensions_mut().insert(AuthenticatedProject {
+                project_id: session.project_id,
+                // The dashboard login only accepts keys with the query scope.
+                scopes: vec!["query".to_string()],
+                allowed_modules: None,
+            });
+            return Ok(next.run(request).await);
+        }
+    };
 
     let key_hash = hash_key(&key);
     let cache_key = state.redis_key(&format!("apikey:{key_hash}"));

@@ -151,6 +151,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Query routes (API key auth with query scope)
     let query_routes = Router::new()
+        .route("/api/v2/me", get(routes::web::me))
         // Core analytics
         .route("/api/v1/stats", get(routes::query::get_stats))
         .route(
@@ -1269,6 +1270,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(admin_routes)
         .merge(dashboard_routes)
         .merge(public_routes)
+        .nest_service("/app", routes::web::app_service(&state.config.web_dist_dir))
         .layer(cors)
         .layer(Extension(state));
 

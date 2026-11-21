@@ -173,6 +173,19 @@ cargo run -p pulse-server
 
 The server runs SQL migrations automatically on startup.
 
+### Web app
+
+The product UI is a React + TypeScript app in `web/`, served by the server at `/app`
+from `PULSE_WEB_DIR` (default `web/dist`). It signs in through the dashboard login
+(`/dashboard/login?next=/app`) and calls the same `/api` endpoints with the session cookie.
+
+```bash
+cd web && npm ci
+npm run dev        # Vite on :5173, proxies /api and /dashboard to PULSE_API (default http://localhost:8090)
+npm test           # Vitest
+npm run build      # type-check + production build into web/dist
+```
+
 ## Make Commands
 
 ```bash

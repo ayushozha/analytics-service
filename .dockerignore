@@ -4,6 +4,7 @@
 target
 sdk/node_modules
 sdk/dist
+web/dist
 node_modules
 *.log
 .env
