@@ -234,3 +234,26 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .session-event .t { width: 56px; color: var(--muted); flex: none; }
 .session-event .n { font-family: var(--mono); font-size: 12px; font-weight: 600; flex: 0 0 170px; }
 .session-event .d { flex: 1; min-width: 0; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Definitions */
+.badge {
+  font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); white-space: nowrap;
+}
+.badge-verified { color: #047857; border-color: #a7f3d0; background: #ecfdf5; }
+.badge-pii { color: var(--danger); border-color: var(--danger-line); }
+.type-badge { font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--chip); border-radius: 4px; padding: 2px 6px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.textarea { height: auto; padding: 8px 10px; resize: vertical; font: inherit; }
+.split { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.split > .card:first-child { flex: 3 1 560px; }
+.split > .editor { flex: 1 1 320px; position: sticky; top: 16px; }
+.table tr.selected td { background: var(--accent-soft); }
+.props-grid { display: grid; grid-template-columns: minmax(120px, 220px) 1fr; gap: 4px 16px; padding: 8px 4px 12px; font-size: 12px; }
+.props-grid .k { font-family: var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.props-grid .v { font-family: var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.live-dot { width: 8px; height: 8px; border-radius: 999px; background: #10b981; display: inline-block; box-shadow: 0 0 0 3px #d1fae5; }
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 4px 4px 8px; border-radius: 8px; background: var(--chip); }
+.filter-chip button { border: 0; background: transparent; cursor: pointer; color: var(--muted); font-size: 12px; }
+.table a { text-decoration: none; }
+.table a:hover { text-decoration: underline; }

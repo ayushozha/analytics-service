@@ -7,6 +7,7 @@ pub mod bi;
 pub mod campaigns;
 pub mod cohorts;
 pub mod dashboards;
+pub mod definitions;
 pub mod destinations;
 pub mod email_reports;
 pub mod error_tracking;

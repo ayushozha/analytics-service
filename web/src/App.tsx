@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar';
 import { Home } from './pages/Home';
 import { Insights } from './pages/Insights';
 import { Persons } from './pages/Persons';
+import { Events } from './pages/Events';
 import { PersonDetail } from './pages/PersonDetail';
 
 function Layout({ projectName }: { projectName?: string }) {
@@ -27,6 +28,8 @@ export function App() {
         <Route index element={<Home projectName={name} />} />
         <Route path="insights" element={<Insights />} />
         <Route path="insights/:kind" element={<Insights />} />
+        <Route path="events" element={<Events />} />
+        <Route path="events/:tab" element={<Events />} />
         <Route path="persons" element={<Persons />} />
         <Route path="persons/:id" element={<PersonDetail />} />
         <Route path="*" element={<div className="empty">Page not found.</div>} />

@@ -11,7 +11,7 @@ const SECTIONS: { label?: string; items: Item[] }[] = [
     { icon: 'dashboards', label: 'Dashboards' },
   ] },
   { label: 'Data', items: [
-    { icon: 'events', label: 'Events' },
+    { icon: 'events', label: 'Events', to: '/events' },
     { icon: 'persons', label: 'Persons', to: '/persons' },
     { icon: 'groups', label: 'Groups' },
     { icon: 'cohorts', label: 'Cohorts' },

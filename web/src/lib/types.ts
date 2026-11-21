@@ -94,3 +94,46 @@ export interface PersonSession {
   pageviews: number;
   events: number;
 }
+
+export type DefinitionKind = 'event' | 'event_property' | 'person_property' | 'session_property';
+
+export interface DefinitionMeta {
+  description: string | null;
+  owner: string | null;
+  tags: string[];
+  verified: boolean;
+  hidden: boolean;
+  is_pii: boolean;
+}
+
+export interface EventDefinition extends DefinitionMeta {
+  name: string;
+  volume: number;
+  unique_users: number;
+  last_seen_at: string | null;
+}
+
+export interface PropertyDefinition extends DefinitionMeta {
+  name: string;
+  kind: DefinitionKind;
+  property_type: string;
+  seen: number | null;
+}
+
+export interface PropertyFilter {
+  key: string;
+  type?: 'event' | 'session' | 'person';
+  operator?: 'exact' | 'is_not' | 'icontains' | 'not_icontains' | 'is_set' | 'is_not_set';
+  value?: unknown;
+}
+
+export interface ExplorerEvent {
+  event: string;
+  visitor_id: string;
+  session_id: string | null;
+  created_at: string;
+  properties: Record<string, unknown>;
+  person?: { user_id: string | null; traits: Record<string, unknown> | null };
+}
+
+export interface EventsPage { results: ExplorerEvent[]; next_before: string | null }
