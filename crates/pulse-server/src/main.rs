@@ -152,6 +152,23 @@ async fn main() -> anyhow::Result<()> {
     // Query routes (API key auth with query scope)
     let query_routes = Router::new()
         .route("/api/v2/me", get(routes::web::me))
+        // Event / property definitions and the events explorer
+        .route(
+            "/api/v2/event-definitions",
+            get(routes::definitions::event_definitions),
+        )
+        .route(
+            "/api/v2/property-definitions",
+            get(routes::definitions::property_definitions),
+        )
+        .route(
+            "/api/v2/definitions",
+            axum::routing::patch(routes::definitions::update_definition),
+        )
+        .route(
+            "/api/v2/events/query",
+            post(routes::definitions::query_events),
+        )
         // Core analytics
         .route("/api/v1/stats", get(routes::query::get_stats))
         .route(

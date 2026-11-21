@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, useParams } from 'react-router';
+import { NavLink, useParams, useSearchParams } from 'react-router';
 import { api } from '../lib/api';
 import { formatNumber, formatPercent, rangeBounds, type DateRangeKey } from '../lib/format';
 import { BREAKDOWNS, MATH_LABELS, resultLabel, seriesColor, toChart } from '../lib/insights';
@@ -47,7 +47,11 @@ export function Insights() {
 }
 
 function Trends({ range }: { range: DateRangeKey }) {
-  const [series, setSeries] = useState<TrendSeries[]>([{ event: '$pageview', math: 'dau' }]);
+  // `?event=` (e.g. from Events → "Analyze in Trends") seeds the first series.
+  const [params] = useSearchParams();
+  const [series, setSeries] = useState<TrendSeries[]>([
+    params.get('event') ? { event: params.get('event'), math: 'total' } : { event: '$pageview', math: 'dau' },
+  ]);
   const [breakdown, setBreakdown] = useState('');
   const [compare, setCompare] = useState(false);
   const [interval, setInterval] = useState<Interval | ''>('');
